@@ -1,0 +1,11 @@
+[Unit]
+Description=funding-scout daily Telegram digest (top setups by APR)
+After=funding-scout-snapshot.service postgresql.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/funding-scout
+EnvironmentFile=/root/funding-scout/.env
+ExecStart=/root/funding-scout/.venv/bin/funding-scout daily-report --top 10
+StandardOutput=journal
+StandardError=journal

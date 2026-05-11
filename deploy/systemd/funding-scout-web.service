@@ -1,0 +1,23 @@
+[Unit]
+Description=funding-scout web UI (Dash + AG-Grid)
+After=network-online.target postgresql.service funding-scout-snapshot.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/funding-scout
+EnvironmentFile=/root/funding-scout/.env
+# Bind на Tailscale IP — публично закрыто фаерволом, доступно только с твоих
+# Tailscale-устройств. Если IP меняется — переписать здесь.
+ExecStart=/root/funding-scout/.venv/bin/funding-scout web --host 100.124.168.63 --port 8050
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+MemoryMax=512M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target

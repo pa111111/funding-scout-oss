@@ -1,0 +1,23 @@
+[Unit]
+Description=funding-scout snapshot loop (fetch DEX funding rates → Postgres)
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/funding-scout
+EnvironmentFile=/root/funding-scout/.env
+ExecStart=/root/funding-scout/.venv/bin/funding-scout snapshot --loop 3600
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+# Hard-limits — мы знаем что real footprint <300 MB, но даём запас.
+MemoryMax=512M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target

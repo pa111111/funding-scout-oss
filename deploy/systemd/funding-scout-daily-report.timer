@@ -1,0 +1,12 @@
+[Unit]
+Description=funding-scout daily report timer
+
+[Timer]
+# Раз в сутки в 09:00 UTC (12:00 MSK / 11:00 CET / 10:00 GMT)
+OnCalendar=*-*-* 09:00:00 UTC
+Persistent=true
+AccuracySec=1min
+Unit=funding-scout-daily-report.service
+
+[Install]
+WantedBy=timers.target

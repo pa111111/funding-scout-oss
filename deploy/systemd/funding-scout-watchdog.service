@@ -1,0 +1,10 @@
+[Unit]
+Description=funding-scout watchdog (one-shot health check)
+After=funding-scout-snapshot.service postgresql.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/funding-scout-watchdog.env
+ExecStart=/root/funding-scout/scripts/watchdog.sh
+StandardOutput=journal
+StandardError=journal
