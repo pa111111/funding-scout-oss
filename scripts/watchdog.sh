@@ -15,7 +15,7 @@
 #   3. postgres достижим — psql -c 'SELECT 1'
 #   4. свежесть per-venue — каждый venue фетчился последний час
 #
-# Disk full hedge-bot watchdog уже мониторит — здесь не дублируем.
+# Disk-full мониторинг здесь не делаем — оставлено на инфраструктурный watchdog.
 
 set -u
 
@@ -24,7 +24,7 @@ STATE_FILE="$STATE_DIR/last_state"
 mkdir -p "$STATE_DIR"
 
 PSQL_DB="${FUNDING_SCOUT_DB_NAME:-funding_scout}"
-WEB_URL="${FUNDING_SCOUT_WEB_URL:-http://100.124.168.63:8050}"
+WEB_URL="${FUNDING_SCOUT_WEB_URL:-http://127.0.0.1:8050}"
 SNAPSHOT_MAX_AGE=4200   # 70 minutes
 VENUE_MAX_AGE=4200       # 70 minutes per venue
 

@@ -8,9 +8,9 @@ Type=simple
 User=root
 WorkingDirectory=/root/funding-scout
 EnvironmentFile=/root/funding-scout/.env
-# Bind на Tailscale IP — публично закрыто фаерволом, доступно только с твоих
-# Tailscale-устройств. Если IP меняется — переписать здесь.
-ExecStart=/root/funding-scout/.venv/bin/funding-scout web --host 100.124.168.63 --port 8050
+# Host/port берутся из .env (FUNDING_SCOUT_WEB_HOST, FUNDING_SCOUT_WEB_PORT).
+# Default 127.0.0.1 — loopback. Для LAN/VPN-доступа выставить интерфейс в .env.
+ExecStart=/root/funding-scout/.venv/bin/funding-scout web --host ${FUNDING_SCOUT_WEB_HOST} --port ${FUNDING_SCOUT_WEB_PORT}
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

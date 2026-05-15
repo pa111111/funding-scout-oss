@@ -12,7 +12,7 @@ originSessionId: 72eda0b6-1cd7-4258-885e-893ef3d005a7
 | Зависимости | **pip + venv** (не uv пока) | uv был бы быстрее, но pip уже стоит и работает на VPS, на стороне юзера тоже |
 | ORM / DB layer | **SQLAlchemy 2.0** | dialect-aware UPSERT через `sqlite_insert` / `pg_insert`, один код работает с SQLite (локально) и Postgres (VPS) через env-var `DATABASE_URL` |
 | Локальная БД | **SQLite** в `data/funding-scout.db` | нулевая инфра, сразу работает |
-| Прод БД | **Postgres 16** | ставится отдельная database `funding_scout` + user `funding_scout` в общий postgres-инстанс с hedge-bot (peer-auth для админ-задач, scram-sha-256 для приложения) |
+| Прод БД | **Postgres 16** | отдельная database `funding_scout` + user `funding_scout` (peer-auth для админ-задач, scram-sha-256 для приложения) |
 | HTTP client | **httpx 0.28** | async-нативный, MockTransport для unit-тестов, уже работает с двумя коннекторами |
 | Конфиг | **pydantic-settings** | env-driven, `.env` файл, типизированно, fallback на дефолт |
 | Логи | **structlog** | structured json/console, совместим с journald через systemd |

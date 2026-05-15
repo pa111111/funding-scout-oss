@@ -1,13 +1,12 @@
 """Минимальный Telegram-нотифаер.
 
-Отдельные креды от hedge-bot — намеренно изолированный канал. Если переменные
-окружения не заданы — функция ВПИСЫВАЕТ WARNING в лог и тихо пропускает отправку,
-чтобы отсутствие кредов не валило snapshot-loop / daily report. Это та же
-семантика что в hedge-bot/app/notifier.py.
+Если переменные окружения не заданы — функция ВПИСЫВАЕТ WARNING в лог и тихо
+пропускает отправку, чтобы отсутствие кредов не валило snapshot-loop / daily
+report.
 
 Параметры:
-- `FUNDING_SCOUT_TELEGRAM_BOT_TOKEN` — токен от @BotFather (отдельный от hedge-bot!)
-- `FUNDING_SCOUT_TELEGRAM_CHAT_ID` — chat id (отдельный)
+- `FUNDING_SCOUT_TELEGRAM_BOT_TOKEN` — токен от @BotFather
+- `FUNDING_SCOUT_TELEGRAM_CHAT_ID` — chat id
 
 Кладём в `.env` файл проекта или в `/etc/funding-scout-watchdog.env` для systemd-юнитов.
 """
