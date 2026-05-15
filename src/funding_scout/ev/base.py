@@ -6,7 +6,7 @@
 - APR считается × 24 × 365 (а не × 365×3 как для 8h-фандинга на CEX —
   у нас все DEX hourly).
 - Base EV не штрафуется за риск (см. парадигму transparent risk disclosure
-  в docs/product_concept.md). Risk-метрики живут отдельной осью в Setup'е.
+  в docs/concept.md). Risk-метрики живут отдельной осью в Setup'е.
 """
 
 from __future__ import annotations

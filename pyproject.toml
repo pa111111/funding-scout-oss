@@ -1,9 +1,22 @@
 [project]
 name = "funding-scout"
 version = "0.1.0"
-description = "DEX-only funding-rate arbitrage scout — EV-калькулятор связок"
+description = "DEX-only funding-rate arbitrage scout — EV calculator for cross-DEX funding setups"
 requires-python = ">=3.12"
-authors = [{ name = "internal" }]
+authors = [{ name = "Pavel Artamokhov", email = "pavel.artamokhov@gmail.com" }]
+license = { text = "MIT" }
+readme = "README.md"
+keywords = ["defi", "funding-rate", "arbitrage", "perpetuals", "hyperliquid", "lighter", "pacifica", "edgex", "dex"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
 dependencies = [
     "httpx>=0.27",
     "sqlalchemy>=2.0",
@@ -28,6 +41,12 @@ dev = [
 
 [project.scripts]
 funding-scout = "funding_scout.cli:cli"
+
+[project.urls]
+Homepage = "https://github.com/pa111111/funding-scout"
+Repository = "https://github.com/pa111111/funding-scout"
+Issues = "https://github.com/pa111111/funding-scout/issues"
+Changelog = "https://github.com/pa111111/funding-scout/blob/master/CHANGELOG.md"
 
 [build-system]
 requires = ["hatchling"]

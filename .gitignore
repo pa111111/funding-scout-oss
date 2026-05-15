@@ -43,3 +43,8 @@ htmlcov/
 
 # Claude
 .claude/settings.local.json
+.claude/worktrees/
+
+# Private artefacts (live observations, personal framework, internal roadmap, local deploy notes)
+private-docs/
+DEPLOY-local.md

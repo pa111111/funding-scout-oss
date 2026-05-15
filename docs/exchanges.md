@@ -1,12 +1,12 @@
 ---
 name: exchanges relevant to funding-scout
-description: DEX-only list of perp venues to integrate into funding-scout (CEX explicitly out of scope per product_concept.md). Notes on equity perps, wrappers, and unusual funding intervals. Snapshot from posts dated Nov 2025 — Mar 2026; volatile, must re-verify before integration.
+description: DEX-only list of perp venues to integrate into funding-scout (CEX explicitly out of scope per concept.md). Notes on equity perps, wrappers, and unusual funding intervals. Snapshot from posts dated Nov 2025 — Mar 2026; volatile, must re-verify before integration.
 type: reference
 originSessionId: 72eda0b6-1cd7-4258-885e-893ef3d005a7
 ---
 Список собран из постов @everybodycandoit и страницы fundoor.pro (по состоянию на 2026-05-02). Этот список **протухает быстро** — новые DEX появляются раз в 2–4 недели; перед интеграцией обязательно проверять текущий статус площадки и наличие публичного API.
 
-**Скоуп: только DEX.** CEX (Binance, OKX, Bybit, Gate, KuCoin, Coinex, Bitget и т.д.) — out of scope per product_concept.md. fundoor.pro покрывает 14 CEX, мы намеренно нет.
+**Скоуп: только DEX.** CEX (Binance, OKX, Bybit, Gate, KuCoin, Coinex, Bitget и т.д.) — out of scope per concept.md. fundoor.pro покрывает 14 CEX, мы намеренно нет.
 
 ## Integrated venues (по состоянию на 2026-05-08)
 

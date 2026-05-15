@@ -29,7 +29,7 @@
 
 Pacifica сильно ценен тем что тут лежат **equity-перпы** (PLTR, NVDA, TSLA, HOOD)
 и **commodities/forex** (XAU, XAG, SP500, GOOGL, CRCL, BP, COPPER, NATGAS, EURUSD, USDJPY).
-Это разблокирует weekend cross-DEX equity стратегию (см. arbitrage_strategies.md тип 2).
+Это разблокирует weekend cross-DEX equity стратегию (см. docs/strategies.md тип 2).
 
 Формат чисел — strings, как в HL. float() парсит и то и другое.
 Funding interval = 1h (как заявлено в доках, "calculated based on previous hour").

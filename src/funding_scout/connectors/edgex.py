@@ -26,7 +26,7 @@ Naming: contractName приходит как "BTCUSD"/"NVDAUSD"/"1000PEPEUSD" �
 EdgeX killer-feature — самый широкий equity-набор среди DEX:
 NVDA, TSLA, AAPL, MSFT, META, GOOG, AMZN, MSTR, COIN, AMD, INTC, AVGO, PLTR, HOOD
 + commodity (XAUT, PAXG, SILVER, COPPER, NATGAS) + ETF-style (SPY, QQQ).
-Используется для weekend cross-DEX equity стратегии (см. arbitrage_strategies.md).
+Используется для weekend cross-DEX equity стратегии (см. docs/strategies.md).
 
 Числа в JSON приходят как strings (как HL и Pacifica) — float() парсит.
 Funding interval = 1h.

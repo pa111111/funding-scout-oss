@@ -1,6 +1,6 @@
 """Cross-DEX same-ticker detector.
 
-Тип 1 из таксономии (см. docs/arbitrage_strategies.md):
+Тип 1 из таксономии (см. docs/strategies.md):
 лонг по тикеру X на venue A, шорт того же X на venue B.
 Подходит когда X листится на обеих биржах и funding-ставки расходятся.
 
