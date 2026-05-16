@@ -6,7 +6,7 @@ Most funding-rate scanners rank setups by raw APR. That number is misleading on 
 
 ![funding-scout UI — scan view across Hyperliquid, Lighter, Pacifica, EdgeX](docs/img/ui-scan.png)
 
-> **Status:** v0.1, beta. Single operator, manual execution, ~$5k per setup. No order routing, no private keys — funding-scout tells you where to go and why; you decide and click. Breaking changes possible before v0.2.
+> **Status:** v0.1, beta. Designed for small-operator, manual-execution setups (~$5k unit size). No order routing, no private keys — funding-scout tells you where to go and why; you decide and click. Breaking changes possible before v0.2.
 
 ## Why funding-scout
 
@@ -15,7 +15,7 @@ The existing tooling (e.g. [fundoor.pro](https://fundoor.pro)) is built to rank 
 - **Round-trip cost** — entry + exit fees on both legs (fees differ a lot: Hyperliquid taker 0.045%, Lighter free-tier 0%, EdgeX/Pacifica higher).
 - **Expected hold time** — equity-weekend setups close within hours; long-tail carry runs for weeks. The funding APR materialises only over the period you actually hold.
 - **Min profitable hours** = `round-trip cost / funding APR`. If APR is 50% and round-trip cost is 0.20%, you need ~35 hours of holding just to break even. The UI surfaces this number directly.
-- **Friction tax** — when capital is not already on the venues a setup needs, you pay bridging cost + slippage + gas + time. For a $5k manual operator this is often the difference between "🟢 do it" and "🟡 skip".
+- **Friction tax** — when capital is not already on the venues a setup needs, you pay bridging cost + slippage + gas + time. At ~$5k unit size this is often the difference between "🟢 do it" and "🟡 skip".
 
 `funding-scout` is opinionated about one more thing: **transparent risk disclosure, not paternalistic filtering**. Risk metrics (β to majors, simulated flash-crash loss, oracle-manipulation exposure, ADL queue position) live as columns next to EV, with confidence labels (`measured` / `estimated` / `proxied`). Nothing is auto-hidden because of risk. You sort and filter; the tool does not pre-judge for you.
 
