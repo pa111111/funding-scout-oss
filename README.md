@@ -67,8 +67,8 @@ The connector layer is plug-in: see [`src/funding_scout/connectors/`](src/fundin
 ## Install
 
 ```bash
-git clone https://github.com/pa111111/funding-scout.git
-cd funding-scout
+git clone https://github.com/pa111111/funding-scout-oss.git
+cd funding-scout-oss
 
 # Linux / macOS
 python3.12 -m venv .venv
@@ -171,4 +171,4 @@ MIT — see [LICENSE](LICENSE). Copyright © 2026 Pavel Artamokhov.
 
 ## Contact
 
-Issues and PRs welcome at [github.com/pa111111/funding-scout](https://github.com/pa111111/funding-scout).
+Issues and PRs welcome at [github.com/pa111111/funding-scout-oss](https://github.com/pa111111/funding-scout-oss).

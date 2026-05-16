@@ -23,4 +23,4 @@ Initial public release.
 - Reference systemd units in `deploy/systemd/`.
 - Framework docs: concept, strategies (6 types), risk framework, execution model, position lifecycle, exchanges, tech stack.
 
-[0.1.0]: https://github.com/pa111111/funding-scout/releases/tag/v0.1.0
+[0.1.0]: https://github.com/pa111111/funding-scout-oss/releases/tag/v0.1.0
