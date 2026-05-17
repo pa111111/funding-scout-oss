@@ -27,12 +27,10 @@ COLUMN_DEFS: list[dict] = [
         "filter": "agTextColumnFilter",
         "width": 100,
     },
-    {
-        "field": "type",
-        "headerName": "Type",
-        "filter": "agSetColumnFilter",
-        "width": 180,
-    },
+    # NB: поле `type` приходит в row dict из setup_to_row, но в UI пока не показываем —
+    # есть только один детектор (cross-dex-same-ticker), колонка занимала бы 180px ради
+    # одинакового значения во всех строках. Вернуть в COLUMN_DEFS как только появится
+    # второй тип (см. таксономию в arbitrage_strategies.md).
     {
         "field": "long_venue",
         "headerName": "Long",
