@@ -60,6 +60,32 @@ COLUMN_DEFS: list[dict] = [
         "width": 130,
     },
     {
+        "field": "delta_spread_apr_pct_1h",
+        "headerName": "Δ 1h",
+        "headerTooltip": (
+            "Изменение Spread APR % относительно предыдущего snapshot (~1h назад). "
+            "Положительное = окно расширяется. Отрицательное = схлопывается. "
+            "— = нет предыдущего снапшота в окне 2h."
+        ),
+        "type": "numericColumn",
+        "filter": "agNumberColumnFilter",
+        "valueFormatter": {
+            "function": (
+                "params.value == null ? '—' : "
+                "(params.value >= 0 ? '+' : '') + params.value.toFixed(1) + '%'"
+            )
+        },
+        "cellStyle": {
+            "function": (
+                "params.value == null ? null : "
+                "(params.value > 5 ? {color:'#0a7d2c', fontWeight:'600'} : "
+                "(params.value < -5 ? {color:'#a02020', fontWeight:'600'} : "
+                "{color:'#888'}))"
+            )
+        },
+        "width": 100,
+    },
+    {
         "field": "base_ev_usd_per_day",
         "headerName": "EV $/day",
         "headerTooltip": "Base EV в долларах в день на стандартный капитал ($5k). Без учёта риск-метрик.",
