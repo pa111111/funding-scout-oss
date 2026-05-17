@@ -4,7 +4,7 @@ DEX-only funding-rate arbitrage scout. **An EV calculator for funding setups, no
 
 Most funding-rate scanners rank setups by raw APR. That number is misleading on its own: a 400% APR spread that takes 6 hours to materialise can lose money once you factor in round-trip cost, slippage on entry/exit, and the friction tax of moving capital between venues. `funding-scout` computes those costs and shows them next to the EV — so the top of the list is the top of your bankroll, not the top of an API ticker.
 
-![funding-scout UI — scan view across Hyperliquid, Lighter, Pacifica, EdgeX](docs/img/ui-scan.png)
+![funding-scout UI — scan view with 24h sparkline trend, window-age counter, 1h spread delta, and capacity-aware Min vol filter applied; columns reordered for actionable reading: LONG perp on · SHORT perp on · vol · spread · trend · age · Δ · EV](docs/img/ui-scan.png)
 
 > **Status:** v0.1, beta. Designed for small-operator, manual-execution setups (~$5k unit size). No order routing, no private keys — funding-scout tells you where to go and why; you decide and click. Breaking changes possible before v0.2.
 
@@ -23,35 +23,37 @@ See [`docs/concept.md`](docs/concept.md) for the full paradigm, [`docs/strategie
 
 ## Quick look
 
-A live scan against four DEXs (snapshot age: 25 seconds, 310 viable setups detected):
+A live scan against four DEXs:
 
 ```
 $ funding-scout scan
-Snapshot @ 2026-05-15T15:35:24+00:00 (25s ago) | venues: {'edgex': 47, 'hyperliquid': 183, 'lighter': 167, 'pacifica': 66} | setups: 310
+Snapshot @ 2026-05-17T11:52:09+00:00 | venues: {'edgex': 58, 'hyperliquid': 183, 'lighter': 167, 'pacifica': 66} | setups: 322
 
 Ticker    Long -> Short             Spread%APR  EV $/day    RT cost%   MinVol $M
 --------------------------------------------------------------------------------
-STABLE    lighter -> hyperliqui         +636.5   $+87.19        0.06        0.47
-MON       lighter -> edgex              +492.3   $+67.44        0.10        0.70
-MON       lighter -> hyperliqui         +433.0   $+59.32        0.06        0.70
-MORPHO    lighter -> hyperliqui         +410.4   $+56.22        0.06        0.27
-MON       lighter -> pacifica           +405.5   $+55.55        0.10        0.29
-XAG       pacifica -> lighter           +288.4   $+39.51        0.10        1.27
-TRUMP     lighter -> hyperliqui         +237.5   $+32.53        0.06        0.36
-VIRTUAL   edgex -> lighter              +235.6   $+32.28        0.10        0.11
-XAU       pacifica -> lighter           +232.1   $+31.80        0.10        3.77
-TRUMP     lighter -> pacifica           +229.6   $+31.45        0.10        0.13
+CHIP      lighter -> pacifica           +901.8  $+123.53        0.10        0.03
+CHIP      lighter -> hyperliqui         +813.6  $+111.46        0.06        0.03
+SPX       lighter -> hyperliqui         +591.9   $+81.08        0.06        0.04
+STABLE    lighter -> hyperliqui         +572.2   $+78.39        0.06        0.17
+EDGE      lighter -> edgex              +439.4   $+60.19        0.10        0.11
+VIRTUAL   edgex -> lighter              +338.9   $+46.43        0.10        0.10
+HOOD      pacifica -> edgex             +276.2   $+37.84        0.20        0.02
+VIRTUAL   edgex -> pacifica             +268.0   $+36.71        0.20        0.01
+VIRTUAL   edgex -> hyperliqui           +265.8   $+36.41        0.16        0.52
+HOOD      lighter -> edgex              +261.4   $+35.80        0.10        0.32
+...
+SOL       lighter -> hyperliqui         +131.0   $+17.95        0.06       32.87
 ```
 
-EV figures are computed for a standard $5k notional per leg. Pre-market and low-volume tickers are intentionally not filtered out — they get labelled, you decide.
+EV figures are computed for a standard $5k notional per leg. Pre-market and low-volume tickers are **intentionally not filtered out** — they get labelled, you decide. Notice the top of the list above: nine of the top-ten setups have `MinVol $M < $1M`. At ~$5k unit size, slippage on those wipes out the APR. The first *actually tradeable* setup is SOL with $32.87M vol at +131% APR — but you have to scroll past nine honeypots to see it.
 
-For the same data with all risk columns and sortable filters, run the web UI:
+This is by design (transparent risk disclosure, no paternalistic filtering), but in the web UI you can apply a `Min vol 24h $M ≥ 1` filter in the column header and the picture collapses to the ~50 setups you can realistically take. The screenshot above shows that filtered view. The daily Telegram digest applies the same filter automatically and tags the message with `filter: 24h vol ≥ $1M` so you always know whether you're looking at the full board or the actionable subset.
+
+The web UI adds four columns the CLI doesn't show: **Trend 24h** (unicode-block sparkline of spread history), **Age h** (consecutive hours the spread has stayed ≥ 30% APR — distinguishes fresh windows from steady carry), **Δ 1h** (spread change vs the previous snapshot — tells you whether the opportunity is opening or closing right now), and color-coded **LONG perp on / SHORT perp on** columns that read as a literal trade instruction.
 
 ```bash
 funding-scout web --host 127.0.0.1 --port 8050
 ```
-
-Screenshot above shows the UI in scan mode.
 
 ## Supported venues
 
