@@ -46,6 +46,28 @@ COLUMN_DEFS: list[dict] = [
         "width": 110,
     },
     {
+        "field": "min_volume_24h_m_usd",
+        "headerName": "Min vol 24h $M",
+        "headerTooltip": (
+            "Минимум 24h volume среди двух ног, в миллионах USD. "
+            "Один из ключевых показателей — определяет slippage под твой размер. "
+            "Грубо: hourly_vol = vol_24h / 24; slippage % ≈ order_size / hourly_vol × k. "
+            "Серым подсвечено vol < $1M (для $5k высокий slippage)."
+        ),
+        "type": "numericColumn",
+        "filter": "agNumberColumnFilter",
+        "valueFormatter": {
+            "function": "params.value == null ? '—' : '$' + params.value.toFixed(2) + 'M'"
+        },
+        "cellStyle": {
+            "function": (
+                "params.value == null ? {color:'#aaa'} : "
+                "(params.value < 1 ? {color:'#aaa'} : null)"
+            )
+        },
+        "width": 140,
+    },
+    {
         "field": "spread_apr_pct",
         "headerName": "Spread APR %",
         "type": "numericColumn",
@@ -184,17 +206,6 @@ COLUMN_DEFS: list[dict] = [
             "function": "params.value == null ? '—' : params.value.toFixed(2) + '%'"
         },
         "width": 100,
-    },
-    {
-        "field": "min_volume_24h_m_usd",
-        "headerName": "Min vol 24h $M",
-        "headerTooltip": "Минимум 24h volume среди двух ног, в миллионах USD. — = данных нет.",
-        "type": "numericColumn",
-        "filter": "agNumberColumnFilter",
-        "valueFormatter": {
-            "function": "params.value == null ? '—' : '$' + params.value.toFixed(2) + 'M'"
-        },
-        "width": 130,
     },
     {
         "field": "price_spread_pct",
