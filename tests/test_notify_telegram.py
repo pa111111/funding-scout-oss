@@ -97,3 +97,23 @@ def test_explicit_args_beat_env(monkeypatch):
     n = TelegramNotifier(token="explicit", chat_id="999")
     assert n.token == "explicit"
     assert n.chat_id == "999"
+
+
+def test_httpx_logger_silenced_to_protect_bot_token():
+    """httpx логирует POST с URL на INFO. Для Telegram URL содержит bot-токен —
+    `/bot{TOKEN}/sendMessage`. Импорт notify.telegram должен поднять уровень
+    логгера httpx до >= WARNING, чтобы запросы не попадали в systemd journal."""
+    import logging
+
+    # На случай если другой тест/код установил уровень ниже — переимпортим
+    # модуль чтобы убедиться что side-effect от его импорта применился.
+    import importlib
+
+    import funding_scout.notify.telegram
+
+    importlib.reload(funding_scout.notify.telegram)
+
+    assert logging.getLogger("httpx").level >= logging.WARNING, (
+        f"httpx logger level={logging.getLogger('httpx').level}, "
+        f"должен быть >= WARNING ({logging.WARNING}) чтобы не палить bot-токен в логах"
+    )

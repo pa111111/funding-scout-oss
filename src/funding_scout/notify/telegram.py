@@ -13,10 +13,19 @@ report.
 
 from __future__ import annotations
 
+import logging
 import os
 
 import httpx
 import structlog
+
+# httpx логирует каждый POST/GET на INFO-уровне с ПОЛНЫМ URL запроса. Для Telegram
+# API это означает утечку bot-токена в systemd journal — токен сидит прямо в path:
+# `/bot{TOKEN}/sendMessage`. Поднимаем порог логгера httpx до WARNING, чтобы request
+# не светились в журнале. Ошибки (4xx/5xx) останутся видны — они логируются на
+# WARNING/ERROR уровнях независимо. Подавляем на уровне модуля при импорте — это
+# affects только httpx info-логи, своих логов структуры не трогает.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 log = structlog.get_logger()
 
