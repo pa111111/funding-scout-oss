@@ -34,6 +34,11 @@ SPARKLINE_HOURS = 24
 SPARKLINE_BLOCKS = "▁▂▃▄▅▆▇█"
 SPARKLINE_NONE_CHAR = "·"  # для отсутствующих точек (нет данных в snapshot'е)
 
+# Порог для подсчёта "window age" — сколько часов подряд spread ≥ этого значения.
+# 30% APR — типичная нижняя граница "торгуемой" связки на DEX (см. user_framework.md).
+# Связки со спредом <30% обычно не покрывают RT cost за разумное время.
+WINDOW_AGE_THRESHOLD_PCT = 30.0
+
 HOURS_PER_YEAR = 24 * 365
 
 
@@ -61,6 +66,7 @@ def setup_to_row(s: Setup, capital_usd: float = DEFAULT_CAPITAL_USD) -> dict:
         "spread_apr_pct": s.spread_apr_pct,
         "delta_spread_apr_pct_1h": None,  # заполняется в get_latest_setups, см. ниже
         "spread_sparkline": "",  # заполняется в get_latest_setups (история spread за 24h)
+        "window_age_hours": 0,  # заполняется в get_latest_setups (часов подряд ≥ 30%)
         "base_ev_usd_per_day": base_ev_usd_per_day,
         "min_profitable_hours": min_hours,
         "long_funding_apr_pct": s.long_funding_apr_pct,
@@ -135,6 +141,32 @@ def render_sparkline_blocks(values: list[float | None]) -> str:
             idx = min(int(normalized * levels), levels - 1)
             chars.append(SPARKLINE_BLOCKS[idx])
     return "".join(chars)
+
+
+def count_consecutive_hours_above_threshold(
+    series: list[float | None],
+    threshold: float = WINDOW_AGE_THRESHOLD_PCT,
+) -> int:
+    """Сколько последовательных часов от правого края series ≥ threshold.
+
+    Чистая функция. Идёт от последнего элемента назад. Останавливается на первом
+    же значении < threshold ИЛИ None (дыра в данных = не можем утверждать про
+    непрерывность окна).
+
+    Семантика «window age»: если результат N — то N часов подряд (включая текущий)
+    спред держится выше порога. Это «свежесть» торгуемой возможности:
+    - 0 = сейчас спред ниже порога или нет данных
+    - 1 = только текущий час, окно только что открылось
+    - 24 = весь день держится → carry-режим, не временное окно
+
+    Пустой список → 0.
+    """
+    age = 0
+    for value in reversed(series):
+        if value is None or value < threshold:
+            break
+        age += 1
+    return age
 
 
 def compute_spread_history(
@@ -294,8 +326,10 @@ def get_latest_setups(
         for s in setups:
             row = setup_to_row(s, capital_usd=capital_usd)
             key = (s.ticker, s.long_venue, s.short_venue)
+            history = histories.get(key, [])
             row["delta_spread_apr_pct_1h"] = deltas.get(key)
-            row["spread_sparkline"] = render_sparkline_blocks(histories.get(key, []))
+            row["spread_sparkline"] = render_sparkline_blocks(history)
+            row["window_age_hours"] = count_consecutive_hours_above_threshold(history)
             rows.append(row)
 
         now_ts = int(datetime.now(UTC).timestamp())
@@ -320,9 +354,11 @@ __all__ = [
     "SPARKLINE_BLOCKS",
     "SPARKLINE_HOURS",
     "SPARKLINE_NONE_CHAR",
+    "WINDOW_AGE_THRESHOLD_PCT",
     "asdict",
     "compute_spread_deltas",
     "compute_spread_history",
+    "count_consecutive_hours_above_threshold",
     "find_prev_snapshot_ts",
     "get_latest_setups",
     "render_sparkline_blocks",

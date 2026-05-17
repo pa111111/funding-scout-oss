@@ -82,6 +82,30 @@ COLUMN_DEFS: list[dict] = [
         "width": 230,
     },
     {
+        "field": "window_age_hours",
+        "headerName": "Age h",
+        "headerTooltip": (
+            "Сколько часов подряд (от текущего snapshot'а назад) спред держится ≥ 30% APR. "
+            "0 = сейчас ниже порога. 1-3 = свежее окно, рано в стадии. "
+            "4-12 = середина типичного окна. 24 = весь день держится, скорее carry чем окно. "
+            "Считается по непрерывной цепочке — дыра в данных обрывает счёт."
+        ),
+        "type": "numericColumn",
+        "filter": "agNumberColumnFilter",
+        "valueFormatter": {
+            "function": "params.value == null ? '—' : params.value + 'h'"
+        },
+        "cellStyle": {
+            "function": (
+                "params.value == null ? null : "
+                "(params.value === 0 ? {color:'#aaa'} : "
+                "(params.value <= 3 ? {color:'#0a7d2c', fontWeight:'600'} : "
+                "(params.value >= 20 ? {color:'#8a6500'} : null)))"
+            )
+        },
+        "width": 90,
+    },
+    {
         "field": "delta_spread_apr_pct_1h",
         "headerName": "Δ 1h",
         "headerTooltip": (

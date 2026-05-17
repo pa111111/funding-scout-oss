@@ -15,8 +15,10 @@ from funding_scout.web.data import (
     PREV_SNAPSHOT_MAX_LAG_SEC,
     SPARKLINE_BLOCKS,
     SPARKLINE_NONE_CHAR,
+    WINDOW_AGE_THRESHOLD_PCT,
     compute_spread_deltas,
     compute_spread_history,
+    count_consecutive_hours_above_threshold,
     find_prev_snapshot_ts,
     get_latest_setups,
     render_sparkline_blocks,
@@ -82,6 +84,7 @@ def test_row_includes_all_display_fields():
         "spread_apr_pct",
         "delta_spread_apr_pct_1h",
         "spread_sparkline",
+        "window_age_hours",
         "base_ev_usd_per_day",
         "min_profitable_hours",
         "long_funding_apr_pct",
@@ -490,3 +493,86 @@ def test_get_latest_setups_sparkline_is_string_when_no_history():
     _, rows = get_latest_setups()
     assert isinstance(rows[0]["spread_sparkline"], str)
     assert len(rows[0]["spread_sparkline"]) == 1
+
+
+# === count_consecutive_hours_above_threshold (чистая функция) ===
+
+
+def test_age_empty_series_returns_zero():
+    assert count_consecutive_hours_above_threshold([]) == 0
+
+
+def test_age_current_below_threshold_returns_zero():
+    """Последний (правый) элемент ниже порога — окна сейчас нет, возраст 0."""
+    assert count_consecutive_hours_above_threshold([100.0, 100.0, 10.0]) == 0
+
+
+def test_age_only_current_above_threshold_returns_one():
+    """Только последний слот выше — окно только что открылось."""
+    assert count_consecutive_hours_above_threshold([10.0, 10.0, 50.0]) == 1
+
+
+def test_age_full_series_above_threshold():
+    """Все 5 значений >= порога → возраст 5."""
+    assert count_consecutive_hours_above_threshold([50.0, 60.0, 70.0, 80.0, 90.0]) == 5
+
+
+def test_age_breaks_on_dip_in_middle():
+    """Если 10h назад был провал — считаем только от последнего провала.
+
+    Серия [..., 50, 10, 50, 50, 50] → возраст 3 (последние три значения).
+    """
+    series = [50.0, 50.0, 50.0, 10.0, 50.0, 50.0, 50.0]
+    assert count_consecutive_hours_above_threshold(series) == 3
+
+
+def test_age_breaks_on_none():
+    """None в недавнем прошлом обрывает счёт — данные неполные, не утверждаем."""
+    series = [50.0, 50.0, 50.0, None, 50.0, 50.0]
+    assert count_consecutive_hours_above_threshold(series) == 2
+
+
+def test_age_uses_default_30pct_threshold():
+    """Дефолтный порог — WINDOW_AGE_THRESHOLD_PCT (30.0)."""
+    assert WINDOW_AGE_THRESHOLD_PCT == 30.0
+    # 29.99 не считается, 30.0 считается
+    assert count_consecutive_hours_above_threshold([29.99]) == 0
+    assert count_consecutive_hours_above_threshold([30.0]) == 1
+
+
+def test_age_custom_threshold():
+    """Можно передать другой порог, например 50% для более строгой оценки."""
+    series = [40.0, 40.0, 40.0]
+    assert count_consecutive_hours_above_threshold(series, threshold=30.0) == 3
+    assert count_consecutive_hours_above_threshold(series, threshold=50.0) == 0
+
+
+# === Window age end-to-end через get_latest_setups ===
+
+
+def test_get_latest_setups_includes_window_age():
+    """Базовый smoke: window_age_hours есть в row и не None."""
+    _ins(1000, "lighter", "BTC", -0.0001)
+    _ins(1000, "hyperliquid", "BTC", 0.0001)
+    _, rows = get_latest_setups()
+    assert "window_age_hours" in rows[0]
+    assert isinstance(rows[0]["window_age_hours"], int)
+
+
+def test_get_latest_setups_age_counts_high_spread_streak():
+    """3 snapshot'а подряд со спредом 175% (выше 30%) → возраст 3."""
+    # Spread = (0.0001 - (-0.0001)) × 8760 × 100 = 175.2 — выше порога 30%
+    for ts in (1000, 4600, 8200):
+        _ins(ts, "lighter", "BTC", -0.0001)
+        _ins(ts, "hyperliquid", "BTC", 0.0001)
+    _, rows = get_latest_setups()
+    assert rows[0]["window_age_hours"] == 3
+
+
+def test_get_latest_setups_age_zero_when_current_below_threshold():
+    """Текущий spread ниже порога 30% — возраст 0."""
+    # Spread = (0.00001 - 0) × 8760 × 100 = 0.876% < 30%
+    _ins(1000, "lighter", "BTC", 0.0)
+    _ins(1000, "hyperliquid", "BTC", 0.00001)
+    _, rows = get_latest_setups()
+    assert rows[0]["window_age_hours"] == 0
