@@ -33,15 +33,28 @@ COLUMN_DEFS: list[dict] = [
     # второй тип (см. таксономию в arbitrage_strategies.md).
     {
         "field": "long_venue",
-        "headerName": "Long",
+        "headerName": "LONG perp on",
+        "headerTooltip": (
+            "Биржа, на которой нужно открыть ЛОНГ перп. "
+            "Long-нога = там где funding ниже (нам платят за лонг или меньше отнимают). "
+            "Сейчас все связки — perp-only; когда добавим spot-варианты, "
+            "появится отдельная отметка про инструмент."
+        ),
         "filter": "agSetColumnFilter",
-        "width": 110,
+        "cellStyle": {"color": "#0a7d2c", "fontWeight": "600"},
+        "width": 140,
     },
     {
         "field": "short_venue",
-        "headerName": "Short",
+        "headerName": "SHORT perp on",
+        "headerTooltip": (
+            "Биржа, на которой нужно открыть ШОРТ перп. "
+            "Short-нога = там где funding выше (нам платят за шорт). "
+            "Сейчас все связки — perp-only."
+        ),
         "filter": "agSetColumnFilter",
-        "width": 110,
+        "cellStyle": {"color": "#a02020", "fontWeight": "600"},
+        "width": 140,
     },
     {
         "field": "min_volume_24h_m_usd",
