@@ -13,9 +13,13 @@ from funding_scout.storage.models import FundingSnapshot
 from funding_scout.web.data import (
     DEFAULT_CAPITAL_USD,
     PREV_SNAPSHOT_MAX_LAG_SEC,
+    SPARKLINE_BLOCKS,
+    SPARKLINE_NONE_CHAR,
     compute_spread_deltas,
+    compute_spread_history,
     find_prev_snapshot_ts,
     get_latest_setups,
+    render_sparkline_blocks,
     setup_to_row,
 )
 
@@ -77,6 +81,7 @@ def test_row_includes_all_display_fields():
         "short_venue",
         "spread_apr_pct",
         "delta_spread_apr_pct_1h",
+        "spread_sparkline",
         "base_ev_usd_per_day",
         "min_profitable_hours",
         "long_funding_apr_pct",
@@ -334,3 +339,154 @@ def test_delta_spread_none_for_new_pair_not_in_prev():
     by_ticker = {r["ticker"]: r for r in rows}
     assert by_ticker["BTC"]["delta_spread_apr_pct_1h"] == pytest.approx(0.0, abs=1e-9)
     assert by_ticker["SOL"]["delta_spread_apr_pct_1h"] is None
+
+
+# === render_sparkline_blocks (чистая функция) ===
+
+
+def test_sparkline_empty_returns_empty():
+    assert render_sparkline_blocks([]) == ""
+
+
+def test_sparkline_all_none_returns_dots():
+    out = render_sparkline_blocks([None, None, None])
+    assert out == SPARKLINE_NONE_CHAR * 3
+
+
+def test_sparkline_constant_uses_middle_level():
+    """Если spread не меняется — все блоки одинаковые средние."""
+    out = render_sparkline_blocks([100.0, 100.0, 100.0])
+    expected_char = SPARKLINE_BLOCKS[len(SPARKLINE_BLOCKS) // 2]
+    assert out == expected_char * 3
+
+
+def test_sparkline_min_is_lowest_block_max_is_highest():
+    """Минимум → ▁ (первый), максимум → █ (последний)."""
+    out = render_sparkline_blocks([10.0, 50.0, 100.0])
+    assert out[0] == SPARKLINE_BLOCKS[0]
+    assert out[-1] == SPARKLINE_BLOCKS[-1]
+    # Среднее значение — где-то посередине
+    assert SPARKLINE_BLOCKS.index(out[1]) > 0
+    assert SPARKLINE_BLOCKS.index(out[1]) < len(SPARKLINE_BLOCKS) - 1
+
+
+def test_sparkline_none_renders_as_dot_in_middle():
+    """None в середине ряда → · в строке, остальные нормализуются по valid."""
+    out = render_sparkline_blocks([0.0, None, 100.0])
+    assert len(out) == 3
+    assert out[1] == SPARKLINE_NONE_CHAR
+    assert out[0] == SPARKLINE_BLOCKS[0]
+    assert out[2] == SPARKLINE_BLOCKS[-1]
+
+
+def test_sparkline_monotonic_increasing_is_non_decreasing_chars():
+    """Возрастающая серия → монотонно неубывающий sparkline."""
+    out = render_sparkline_blocks([i * 1.0 for i in range(8)])
+    indices = [SPARKLINE_BLOCKS.index(c) for c in out]
+    assert all(indices[i] <= indices[i + 1] for i in range(len(indices) - 1))
+
+
+# === compute_spread_history ===
+
+
+def _setup_for_pair(ticker, long_venue, short_venue):
+    """Минимальный Setup только с identity-полями, остальное по умолчанию."""
+    return _setup(ticker=ticker, long_venue=long_venue, short_venue=short_venue)
+
+
+def test_history_empty_setups_returns_empty():
+    with SessionLocal() as s:
+        assert compute_spread_history(s, [], 1000) == {}
+
+
+def test_history_no_snapshots_in_window_returns_empty_series_per_pair():
+    """Если в окне 24h нет snapshot'ов — каждой связке пустая серия."""
+    setups = [_setup_for_pair("BTC", "lighter", "hyperliquid")]
+    with SessionLocal() as s:
+        result = compute_spread_history(s, setups, 1000, hours=24)
+    assert result == {("BTC", "lighter", "hyperliquid"): []}
+
+
+def test_history_returns_spread_series_over_three_snapshots():
+    """3 snapshot'а подряд → series длиной 3, формула spread = (short-long)×8760×100."""
+    # ts=1000: long=-0.0001, short=+0.0001 → spread = 0.0002 × 8760 × 100 = 175.2
+    _ins(1000, "lighter", "BTC", -0.0001)
+    _ins(1000, "hyperliquid", "BTC", 0.0001)
+    # ts=4600: long=-0.00005, short=+0.0001 → spread = 0.00015 × 8760 × 100 = 131.4
+    _ins(4600, "lighter", "BTC", -0.00005)
+    _ins(4600, "hyperliquid", "BTC", 0.0001)
+    # ts=8200: long=0.0, short=+0.0001 → spread = 0.0001 × 8760 × 100 = 87.6
+    _ins(8200, "lighter", "BTC", 0.0)
+    _ins(8200, "hyperliquid", "BTC", 0.0001)
+
+    setups = [_setup_for_pair("BTC", "lighter", "hyperliquid")]
+    with SessionLocal() as s:
+        result = compute_spread_history(s, setups, 8200, hours=24)
+
+    series = result[("BTC", "lighter", "hyperliquid")]
+    assert len(series) == 3
+    assert series[0] == pytest.approx(175.2, rel=1e-3)
+    assert series[1] == pytest.approx(131.4, rel=1e-3)
+    assert series[2] == pytest.approx(87.6, rel=1e-3)
+
+
+def test_history_missing_leg_yields_none_in_that_slot():
+    """Если на ts=4600 одна нога пропала — в этом slot'е None."""
+    _ins(1000, "lighter", "BTC", -0.0001)
+    _ins(1000, "hyperliquid", "BTC", 0.0001)
+    # ts=4600: только lighter, hyperliquid не отдал
+    _ins(4600, "lighter", "BTC", 0.0)
+    _ins(8200, "lighter", "BTC", 0.0)
+    _ins(8200, "hyperliquid", "BTC", 0.0001)
+
+    setups = [_setup_for_pair("BTC", "lighter", "hyperliquid")]
+    with SessionLocal() as s:
+        result = compute_spread_history(s, setups, 8200, hours=24)
+
+    series = result[("BTC", "lighter", "hyperliquid")]
+    assert len(series) == 3
+    assert series[0] is not None
+    assert series[1] is None  # дыра
+    assert series[2] is not None
+
+
+def test_history_respects_hours_window():
+    """ts старше latest_ts - hours*3600 не должен попасть в серию."""
+    _ins(100, "lighter", "BTC", -0.0001)  # вне окна 24h, latest_ts=100000
+    _ins(100, "hyperliquid", "BTC", 0.0001)
+    _ins(50000, "lighter", "BTC", -0.0001)  # вне окна 24h (24×3600=86400, 100000-50000=50000 < 86400, ВНУТРИ)
+    _ins(50000, "hyperliquid", "BTC", 0.0001)
+    _ins(100000, "lighter", "BTC", -0.0001)
+    _ins(100000, "hyperliquid", "BTC", 0.0001)
+
+    setups = [_setup_for_pair("BTC", "lighter", "hyperliquid")]
+    with SessionLocal() as s:
+        result = compute_spread_history(s, setups, 100000, hours=24)
+
+    # 100000 - 24*3600 = 13600, окно [13600, 100000], ts=100 ВНЕ, остальные ВНУТРИ
+    series = result[("BTC", "lighter", "hyperliquid")]
+    assert len(series) == 2  # ts=50000 и ts=100000
+
+
+# === Sparkline end-to-end через get_latest_setups ===
+
+
+def test_get_latest_setups_includes_sparkline_string():
+    """Самый базовый sanity-check: spread_sparkline существует и не пустой при наличии истории."""
+    _ins(1000, "lighter", "BTC", -0.0001)
+    _ins(1000, "hyperliquid", "BTC", 0.0001)
+    _ins(4600, "lighter", "BTC", -0.0001)
+    _ins(4600, "hyperliquid", "BTC", 0.0001)
+
+    _, rows = get_latest_setups()
+    assert "spread_sparkline" in rows[0]
+    assert len(rows[0]["spread_sparkline"]) == 2  # 2 ts в окне 24h
+
+
+def test_get_latest_setups_sparkline_is_string_when_no_history():
+    """С единственным snapshot'ом — sparkline = 1 символ (точка спреда)."""
+    _ins(1000, "lighter", "BTC", -0.0001)
+    _ins(1000, "hyperliquid", "BTC", 0.0001)
+    _, rows = get_latest_setups()
+    assert isinstance(rows[0]["spread_sparkline"], str)
+    assert len(rows[0]["spread_sparkline"]) == 1

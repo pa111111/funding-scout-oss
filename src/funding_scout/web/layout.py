@@ -60,6 +60,28 @@ COLUMN_DEFS: list[dict] = [
         "width": 130,
     },
     {
+        "field": "spread_sparkline",
+        "headerName": "Trend 24h",
+        "headerTooltip": (
+            "Sparkline спреда за 24 часа (1 символ = 1 час). "
+            "Каждый блок ▁..█ — относительная высота spread_apr_pct в окне 24h. "
+            "· = в этом часе не было snapshot'а или одна нога пропала. "
+            "Слева → 24h назад, справа → текущий час."
+        ),
+        "sortable": False,
+        "filter": False,
+        "valueFormatter": {
+            "function": "params.value || ''"
+        },
+        "cellStyle": {
+            "fontFamily": "Consolas, 'Courier New', monospace",
+            "fontSize": "14px",
+            "letterSpacing": "0px",
+            "color": "#444",
+        },
+        "width": 230,
+    },
+    {
         "field": "delta_spread_apr_pct_1h",
         "headerName": "Δ 1h",
         "headerTooltip": (

@@ -25,6 +25,17 @@ DEFAULT_CAPITAL_USD = 5000.0
 # Если ничего нет (только что включили продакт / был долгий простой) — delta = None.
 PREV_SNAPSHOT_MAX_LAG_SEC = 7200  # 2 часа: ловим даже если один цикл пропущен
 
+# Sparkline tend-колонка: сколько часов истории спреда показывать.
+# 24h хватает чтобы видеть полный цикл funding/окна и предыдущий день.
+SPARKLINE_HOURS = 24
+
+# Unicode block-elements для отрисовки sparkline в одной ячейке без SVG/HTML.
+# 8 уровней высоты от низкого к высокому. Моноширинный шрифт в layout.
+SPARKLINE_BLOCKS = "▁▂▃▄▅▆▇█"
+SPARKLINE_NONE_CHAR = "·"  # для отсутствующих точек (нет данных в snapshot'е)
+
+HOURS_PER_YEAR = 24 * 365
+
 
 def setup_to_row(s: Setup, capital_usd: float = DEFAULT_CAPITAL_USD) -> dict:
     """Преобразовать Setup в плоский dict для AG-Grid.
@@ -49,6 +60,7 @@ def setup_to_row(s: Setup, capital_usd: float = DEFAULT_CAPITAL_USD) -> dict:
         "short_venue": s.short_venue,
         "spread_apr_pct": s.spread_apr_pct,
         "delta_spread_apr_pct_1h": None,  # заполняется в get_latest_setups, см. ниже
+        "spread_sparkline": "",  # заполняется в get_latest_setups (история spread за 24h)
         "base_ev_usd_per_day": base_ev_usd_per_day,
         "min_profitable_hours": min_hours,
         "long_funding_apr_pct": s.long_funding_apr_pct,
@@ -89,6 +101,114 @@ def _spread_index(setups: list[Setup]) -> dict[tuple[str, str, str], float]:
         (s.ticker, s.long_venue, s.short_venue): s.spread_apr_pct
         for s in setups
     }
+
+
+def render_sparkline_blocks(values: list[float | None]) -> str:
+    """Отрендерить sparkline как строку из unicode block-elements.
+
+    Чистая функция: список значений → строка. Маппит values в 8 уровней высоты
+    относительно min/max доступных. None → '·' (отсутствие данных).
+    Пустой список → пустая строка. Все одинаковые значения → средний уровень.
+
+    Каждый символ — один tick (1 час в нашем UI). Чем выше блок — тем больше spread.
+    """
+    if not values:
+        return ""
+
+    valid = [v for v in values if v is not None]
+    if not valid:
+        return SPARKLINE_NONE_CHAR * len(values)
+
+    vmin = min(valid)
+    vmax = max(valid)
+    span = vmax - vmin
+    levels = len(SPARKLINE_BLOCKS)
+
+    chars: list[str] = []
+    for v in values:
+        if v is None:
+            chars.append(SPARKLINE_NONE_CHAR)
+        elif span == 0:
+            chars.append(SPARKLINE_BLOCKS[levels // 2])
+        else:
+            normalized = (v - vmin) / span
+            idx = min(int(normalized * levels), levels - 1)
+            chars.append(SPARKLINE_BLOCKS[idx])
+    return "".join(chars)
+
+
+def compute_spread_history(
+    session: Session,
+    latest_setups: list[Setup],
+    latest_ts: int,
+    hours: int = SPARKLINE_HOURS,
+) -> dict[tuple[str, str, str], list[float | None]]:
+    """История spread_apr_pct по часам для каждой связки из latest_setups.
+
+    Возвращает dict[(ticker, long_venue, short_venue), list[float | None]].
+    Список выровнен по списку DISTINCT ts в окне [latest_ts - hours*3600, latest_ts],
+    отсортированному по возрастанию. Последний элемент — текущий ts.
+
+    Реализация:
+    1. Один SQL за все funding_rate_1h в окне (фильтр по тикерам latest_setups).
+    2. Группировка в Python в dict[(ts, venue, ticker), rate].
+    3. Для каждой связки пробегаем все ts окна, вычисляем spread = (rate_short -
+       rate_long) × 8760 × 100. Если на этом ts какая-то нога отсутствует — None.
+
+    Edge cases:
+    - latest_setups пустой → возвращаем {}.
+    - В окне нет ts → каждая связка получит пустой список [].
+    """
+    if not latest_setups:
+        return {}
+
+    min_ts = latest_ts - hours * 3600
+
+    timestamps = [
+        row[0]
+        for row in session.execute(
+            select(FundingSnapshot.ts)
+            .where(FundingSnapshot.ts >= min_ts, FundingSnapshot.ts <= latest_ts)
+            .distinct()
+            .order_by(FundingSnapshot.ts)
+        ).all()
+    ]
+    if not timestamps:
+        return {key: [] for key in {
+            (s.ticker, s.long_venue, s.short_venue) for s in latest_setups
+        }}
+
+    tickers = {s.ticker for s in latest_setups}
+    rate_rows = session.execute(
+        select(
+            FundingSnapshot.ts,
+            FundingSnapshot.venue,
+            FundingSnapshot.ticker,
+            FundingSnapshot.funding_rate_1h,
+        ).where(
+            FundingSnapshot.ts >= min_ts,
+            FundingSnapshot.ts <= latest_ts,
+            FundingSnapshot.ticker.in_(tickers),
+        )
+    ).all()
+
+    rates: dict[tuple[int, str, str], float] = {
+        (ts, venue, ticker): rate for ts, venue, ticker, rate in rate_rows
+    }
+
+    histories: dict[tuple[str, str, str], list[float | None]] = {}
+    for s in latest_setups:
+        key = (s.ticker, s.long_venue, s.short_venue)
+        series: list[float | None] = []
+        for ts in timestamps:
+            long_rate = rates.get((ts, s.long_venue, s.ticker))
+            short_rate = rates.get((ts, s.short_venue, s.ticker))
+            if long_rate is None or short_rate is None:
+                series.append(None)
+            else:
+                series.append((short_rate - long_rate) * HOURS_PER_YEAR * 100.0)
+        histories[key] = series
+    return histories
 
 
 def compute_spread_deltas(
@@ -166,11 +286,16 @@ def get_latest_setups(
             prev_setups = detector.detect_for_snapshot(session, prev_ts)
             deltas = compute_spread_deltas(setups, prev_setups)
 
+        # Sparkline истории спреда за 24h — один SQL и группировка в Python.
+        # Для каждой связки получаем list[float | None], рендерим в unicode-строку.
+        histories = compute_spread_history(session, setups, int(latest_ts))
+
         rows = []
         for s in setups:
             row = setup_to_row(s, capital_usd=capital_usd)
             key = (s.ticker, s.long_venue, s.short_venue)
             row["delta_spread_apr_pct_1h"] = deltas.get(key)
+            row["spread_sparkline"] = render_sparkline_blocks(histories.get(key, []))
             rows.append(row)
 
         now_ts = int(datetime.now(UTC).timestamp())
@@ -190,10 +315,16 @@ def get_latest_setups(
 # Re-export для удобства тестирования
 __all__ = [
     "DEFAULT_CAPITAL_USD",
+    "HOURS_PER_YEAR",
     "PREV_SNAPSHOT_MAX_LAG_SEC",
+    "SPARKLINE_BLOCKS",
+    "SPARKLINE_HOURS",
+    "SPARKLINE_NONE_CHAR",
     "asdict",
     "compute_spread_deltas",
+    "compute_spread_history",
     "find_prev_snapshot_ts",
     "get_latest_setups",
+    "render_sparkline_blocks",
     "setup_to_row",
 ]
