@@ -19,13 +19,20 @@ import pytest
 from funding_scout.connectors.hyperliquid import HyperliquidConnector
 
 
-def _mock_transport(payload):
-    """Return MockTransport that responds with given payload to any POST."""
+def _mock_transport(payload, expect_dex=None):
+    """Return MockTransport that responds with given payload to any POST.
+
+    expect_dex: если задан — проверяем что в body есть {"dex": expect_dex}.
+    """
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "POST"
         body = json.loads(request.content)
-        assert body == {"type": "metaAndAssetCtxs"}
+        assert body["type"] == "metaAndAssetCtxs"
+        if expect_dex is None:
+            assert "dex" not in body
+        else:
+            assert body["dex"] == expect_dex
         return httpx.Response(200, json=payload)
 
     return httpx.MockTransport(handler)
@@ -216,3 +223,80 @@ async def test_http_error_propagates():
     c = HyperliquidConnector(transport=httpx.MockTransport(handler))
     with pytest.raises(httpx.HTTPStatusError):
         await c.fetch_snapshot()
+
+
+# --- HIP-3 builder-deployed perp-dex'ы ---
+
+
+def test_builder_dex_sets_venue():
+    """dex=xyz → venue=hyperliquid-xyz; основной коннектор остаётся hyperliquid."""
+    assert HyperliquidConnector().venue == "hyperliquid"
+    assert HyperliquidConnector(dex="xyz").venue == "hyperliquid-xyz"
+
+
+@pytest.mark.asyncio
+async def test_builder_dex_sends_dex_param_and_strips_prefix():
+    """Запрос к builder-dex шлёт {"dex": "xyz"}, тикеры приходят как 'xyz:BRENTOIL',
+    в БД кладём чистый 'BRENTOIL' чтобы матчился cross-DEX с тем же активом."""
+    payload = [
+        {
+            "universe": [
+                {"name": "xyz:BRENTOIL", "szDecimals": 2},
+                {"name": "xyz:GOLD", "szDecimals": 4},
+            ]
+        },
+        [
+            {
+                "funding": "0.00000625",
+                "openInterest": "3331471.86",
+                "dayNtlVlm": "286299431.35",
+                "markPx": "94.791",
+                "midPx": "94.844",
+            },
+            {
+                "funding": "-0.0000885788",
+                "openInterest": "2194318.24",
+                "dayNtlVlm": "432564234.65",
+                "markPx": "90.489",
+                "midPx": "90.489",
+            },
+        ],
+    ]
+    c = HyperliquidConnector(transport=_mock_transport(payload, expect_dex="xyz"), dex="xyz")
+    ticks = await c.fetch_snapshot()
+
+    assert {t.ticker for t in ticks} == {"BRENTOIL", "GOLD"}  # префикс срезан
+    assert all(t.venue == "hyperliquid-xyz" for t in ticks)
+
+    brent = next(t for t in ticks if t.ticker == "BRENTOIL")
+    assert brent.funding_rate_1h == pytest.approx(0.00000625)
+    assert brent.mark_price == pytest.approx(94.791)
+    assert brent.raw["dex"] == "xyz"  # deployer-метка для risk-badge
+    # сырое имя с префиксом сохранено в raw для аудита
+    assert brent.raw["asset"]["name"] == "xyz:BRENTOIL"
+
+
+@pytest.mark.asyncio
+async def test_builder_dex_ticker_without_prefix_passes_through():
+    """Если тикер вдруг без префикса dex — не падаем, оставляем как есть."""
+    payload = [
+        {"universe": [{"name": "WEIRD", "szDecimals": 2}]},
+        [{"funding": "0.0", "markPx": "100"}],
+    ]
+    c = HyperliquidConnector(transport=_mock_transport(payload, expect_dex="xyz"), dex="xyz")
+    ticks = await c.fetch_snapshot()
+    assert len(ticks) == 1
+    assert ticks[0].ticker == "WEIRD"
+    assert ticks[0].venue == "hyperliquid-xyz"
+
+
+@pytest.mark.asyncio
+async def test_main_connector_raw_has_null_dex():
+    """Основной коннектор кладёт dex=None в raw (для единообразия схемы raw)."""
+    payload = [
+        {"universe": [{"name": "BTC", "szDecimals": 5}]},
+        [{"funding": "0.0", "markPx": "60000"}],
+    ]
+    c = HyperliquidConnector(transport=_mock_transport(payload))
+    ticks = await c.fetch_snapshot()
+    assert ticks[0].raw["dex"] is None

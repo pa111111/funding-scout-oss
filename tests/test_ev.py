@@ -32,6 +32,16 @@ def test_two_unknown_venues():
     assert cost == pytest.approx(2 * DEFAULT_ROUND_TRIP_COST_PCT)
 
 
+def test_hip3_builder_dex_inherits_hl_cost():
+    """hyperliquid-xyz (HIP-3 builder-dex) наследует base HL cost, не pessimistic default."""
+    # builder-dex ↔ lighter: 0.06 (HL base) + 0.00 (lighter) = 0.06, не 0.10+0.00
+    assert round_trip_cost_pair("hyperliquid-xyz", "lighter") == pytest.approx(0.06)
+    # builder-dex ↔ основной HL
+    assert round_trip_cost_pair("hyperliquid-xyz", "hyperliquid") == pytest.approx(0.12)
+    # любой builder-dex суффикс
+    assert round_trip_cost_pair("hyperliquid-abc", "lighter") == pytest.approx(0.06)
+
+
 def test_known_venues_dict_includes_hl_and_lighter():
     """Sanity: критичные коннекторы покрыты."""
     assert "hyperliquid" in ROUND_TRIP_COST_PCT

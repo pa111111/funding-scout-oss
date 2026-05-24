@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     pacifica_api: str = "https://api.pacifica.fi"
     edgex_api: str = "https://pro.edgex.exchange"
 
+    # HL HIP-3 builder-deployed perp-dex'ы (RWA: нефть, металлы, акции, индексы).
+    # Каждый фетчится отдельным HyperliquidConnector(dex=...) с venue=hyperliquid-<dex>.
+    # Override через env JSON-списком: HYPERLIQUID_BUILDER_DEXS=["xyz","abc"]. Пусто = отключить.
+    hyperliquid_builder_dexs: list[str] = ["xyz"]
+
     # HTTP client
     http_timeout_seconds: float = 15.0
 

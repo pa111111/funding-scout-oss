@@ -35,11 +35,25 @@ ROUND_TRIP_COST_PCT: dict[str, float] = {
 DEFAULT_ROUND_TRIP_COST_PCT = 0.10
 
 
+def _venue_cost(venue: str) -> float:
+    """Round-trip cost одной ноги по venue. Знает про HIP-3 builder-dex'ы."""
+    cost = ROUND_TRIP_COST_PCT.get(venue)
+    if cost is not None:
+        return cost
+    # HIP-3 builder-dex'ы именуются "hyperliquid-<dex>" и живут на HyperCore с той же
+    # базовой fee-структурой, что основной HL → берём HL cost, а не pessimistic default.
+    # ⚠️ ВНИМАНИЕ: deployer builder-dex'а может брать доп. builder-fee (feeRecipient в
+    # perpDexs). Реальный round-trip может быть ВЫШЕ base 0.06%. Это floor — уточнить
+    # реальной сделкой и при необходимости добавить explicit запись в ROUND_TRIP_COST_PCT.
+    if venue.startswith("hyperliquid"):
+        return ROUND_TRIP_COST_PCT["hyperliquid"]
+    return DEFAULT_ROUND_TRIP_COST_PCT
+
+
 def round_trip_cost_pair(long_venue: str, short_venue: str) -> float:
     """Суммарный round-trip cost для cross-DEX связки в %.
 
     Возвращает сумму costs обеих ног. Если venue неизвестен — pessimistic default.
+    HIP-3 builder-dex'ы (hyperliquid-<dex>) наследуют base HL cost.
     """
-    long_cost = ROUND_TRIP_COST_PCT.get(long_venue, DEFAULT_ROUND_TRIP_COST_PCT)
-    short_cost = ROUND_TRIP_COST_PCT.get(short_venue, DEFAULT_ROUND_TRIP_COST_PCT)
-    return long_cost + short_cost
+    return _venue_cost(long_venue) + _venue_cost(short_venue)
