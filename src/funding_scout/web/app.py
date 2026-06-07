@@ -13,7 +13,7 @@ import dash
 import dash_bootstrap_components as dbc
 from flask import jsonify
 
-from .data import DEFAULT_CAPITAL_USD, get_latest_setups
+from .data import DEFAULT_CAPITAL_USD, get_candidate_decay, get_latest_setups
 from .layout import make_layout
 
 
@@ -37,6 +37,15 @@ def register_api(app: dash.Dash, capital_usd: float = DEFAULT_CAPITAL_USD) -> No
                 "setups": rows,
             }
         )
+
+    @app.server.route("/api/setups/<candidate_id>")
+    def api_setup_decay(candidate_id: str):  # type: ignore[unused-ignore]
+        # decay/staleness одной связки по TICKER:LONG:SHORT. Отвечает и для связки,
+        # которой уже нет в вердикте (present=false) — это и есть сигнал «закрой X».
+        info = get_candidate_decay(candidate_id)
+        if info is None:
+            return jsonify({"error": "invalid candidate_id, expected TICKER:LONG:SHORT"}), 400
+        return jsonify({"computed_at": datetime.now(UTC).isoformat(), **info})
 
 
 def create_app(capital_usd: float = DEFAULT_CAPITAL_USD) -> dash.Dash:

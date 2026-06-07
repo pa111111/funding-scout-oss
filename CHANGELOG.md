@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Decay / staleness signal on every setup — `staleness` (`fresh`/`cooling`/`stale`/`gone`/`unknown`), `peak_spread_apr_pct`, `decay_from_peak_pct`, `hours_since_peak`, computed from the trailing 24h spread series (same data as the sparkline, no second engine). Answers "is this window opening or closing" — feeds the "close X" half of a downstream join. See [`docs/api.md`](docs/api.md#decay--staleness-signal).
+- `GET /api/setups/<candidate_id>` — per-candidate decay verdict, reconstructed from raw `funding_snapshot` so it can speak to a setup that has already vanished from the live verdict (`present: false`). Malformed id → 400; empty DB → valid `unknown` envelope, never 500.
 - Read-only `GET /api/setups` JSON endpoint — the live EV verdict as JSON for programmatic consumers, served on the same host/port as the Dash UI. Reuses `get_latest_setups()`, so UI and JSON share one computation. Envelope carries `computed_at`, `capital_usd`, `meta`, `setups[]`. See [`docs/api.md`](docs/api.md).
 - Stable `candidate_id` (`TICKER:LONG:SHORT`) on every setup — deterministic key to reference the same setup over time and reconcile it with a downstream position.
 - `setup_snapshot` table — persists the computed detector verdict each cadence (previously computed on the fly and never stored), enabling setup history for a future decay/staleness signal. Written by the snapshot runner on the same `ts` as raw funding; composite PK `(ts, candidate_id)` for idempotency; persist isolated from the raw write.

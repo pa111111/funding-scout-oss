@@ -40,6 +40,13 @@ WINDOW_AGE_THRESHOLD_PCT = 30.0
 
 HOURS_PER_YEAR = 24 * 365
 
+# Decay / staleness (concept §5.4) — связка "протухает", когда её спред падает
+# от собственного пика за окно. Считаем поверх той же 24h-истории, что и
+# sparkline / Age h: ещё один взгляд на ту же серию, без новых запросов в БД.
+# Пороги — доля падения от пика:
+DECAY_COOLING_PCT = 25.0  # упал на 25–50% от пика → "cooling" (остывает)
+DECAY_STALE_PCT = 50.0  # упал на ≥50% от пика → "stale" (протух)
+
 
 def setup_to_row(s: Setup, capital_usd: float = DEFAULT_CAPITAL_USD) -> dict:
     """Преобразовать Setup в плоский dict для AG-Grid.
@@ -67,6 +74,11 @@ def setup_to_row(s: Setup, capital_usd: float = DEFAULT_CAPITAL_USD) -> dict:
         "delta_spread_apr_pct_1h": None,  # заполняется в get_latest_setups, см. ниже
         "spread_sparkline": "",  # заполняется в get_latest_setups (история spread за 24h)
         "window_age_hours": 0,  # заполняется в get_latest_setups (часов подряд ≥ 30%)
+        # decay/staleness — заполняется в get_latest_setups из той же 24h-истории
+        "peak_spread_apr_pct": None,
+        "hours_since_peak": None,
+        "decay_from_peak_pct": None,
+        "staleness": "unknown",
         "base_ev_usd_per_day": base_ev_usd_per_day,
         "min_profitable_hours": min_hours,
         "long_funding_apr_pct": s.long_funding_apr_pct,
@@ -103,10 +115,7 @@ def _spread_index(setups: list[Setup]) -> dict[tuple[str, str, str], float]:
     Используется для матчинга связок между снапшотами при расчёте Δ Spread.
     Ключ нормализован: long/short venues в порядке детектора (long = меньший funding).
     """
-    return {
-        (s.ticker, s.long_venue, s.short_venue): s.spread_apr_pct
-        for s in setups
-    }
+    return {(s.ticker, s.long_venue, s.short_venue): s.spread_apr_pct for s in setups}
 
 
 def render_sparkline_blocks(values: list[float | None]) -> str:
@@ -206,9 +215,7 @@ def compute_spread_history(
         ).all()
     ]
     if not timestamps:
-        return {key: [] for key in {
-            (s.ticker, s.long_venue, s.short_venue) for s in latest_setups
-        }}
+        return {key: [] for key in {(s.ticker, s.long_venue, s.short_venue) for s in latest_setups}}
 
     tickers = {s.ticker for s in latest_setups}
     rate_rows = session.execute(
@@ -265,6 +272,190 @@ def compute_spread_deltas(
         if key in prev_idx:
             deltas[key] = s.spread_apr_pct - prev_idx[key]
     return deltas
+
+
+def decay_from_history(history: list[float | None]) -> dict:
+    """Сигнал decay/staleness по истории спреда одной связки (concept §5.4).
+
+    `history` — list[float | None] из `compute_spread_history`: spread_apr_pct по
+    часам, последний элемент = текущий ts, None = на этом ts одной из ног не было.
+
+    Возвращает dict:
+      - `peak_spread_apr_pct`: float | None — максимум спреда в окне.
+      - `hours_since_peak`: int | None — часов от последнего пика до конца окна.
+      - `decay_from_peak_pct`: float | None — насколько % спред упал от пика, 0..100.
+      - `staleness`: str — "fresh" | "cooling" | "stale" | "gone" | "unknown".
+
+    Семантика `staleness` (что Hermes делает с позицией по этой связке):
+      - `unknown` — в окне нет ни одной точки (нет данных, судить не о чем).
+      - `gone`    — последняя точка окна отсутствует ИЛИ текущий спред ≤ 0:
+                    связка пропала из снапшотов либо перевернулась → закрывать.
+      - `stale`   — текущий спред упал ниже порога торгуемости (был выше) ИЛИ
+                    просел на ≥50% от пика → кандидат на выход.
+      - `cooling` — просел на 25–50% от пика → под наблюдением.
+      - `fresh`   — держится у пика.
+
+    Чистая функция: только арифметика над списком, без БД.
+    """
+    points = [(i, v) for i, v in enumerate(history) if v is not None]
+    if not points:
+        return {
+            "peak_spread_apr_pct": None,
+            "hours_since_peak": None,
+            "decay_from_peak_pct": None,
+            "staleness": "unknown",
+        }
+
+    last_idx, current = points[-1]
+    peak = max(v for _, v in points)
+    # при равенстве берём ПОСЛЕДНЕЕ вхождение пика — "сколько прошло с последнего
+    # раза, когда было так же хорошо".
+    peak_idx = max(i for i, v in points if v == peak)
+    hours_since_peak = last_idx - peak_idx
+
+    decay_pct = max(0.0, min(100.0, (peak - current) / peak * 100.0)) if peak > 0 else None
+
+    # последняя точка окна реально присутствует? если в самом конце были None —
+    # связку перестали детектить (пропала / перевернулась) → gone.
+    current_is_latest = history[-1] is not None
+
+    dropped_below_tradeable = current < WINDOW_AGE_THRESHOLD_PCT <= peak
+    decayed_hard = decay_pct is not None and decay_pct >= DECAY_STALE_PCT
+
+    if not current_is_latest or current <= 0:
+        staleness = "gone"
+    elif dropped_below_tradeable or decayed_hard:
+        staleness = "stale"
+    elif decay_pct is not None and decay_pct >= DECAY_COOLING_PCT:
+        staleness = "cooling"
+    else:
+        staleness = "fresh"
+
+    return {
+        "peak_spread_apr_pct": peak,
+        "hours_since_peak": hours_since_peak,
+        "decay_from_peak_pct": decay_pct,
+        "staleness": staleness,
+    }
+
+
+def _spread_series_for_key(
+    session: Session,
+    ticker: str,
+    long_venue: str,
+    short_venue: str,
+    latest_ts: int,
+    hours: int = SPARKLINE_HOURS,
+) -> list[float | None]:
+    """История spread_apr_pct по часам для ОДНОЙ связки, заданной явными ногами.
+
+    В отличие от `compute_spread_history` (работает по списку текущих Setup),
+    эта реконструирует серию для произвольного `(ticker, long, short)` —
+    в т.ч. для связки, которой УЖЕ нет в текущем вердикте (протухла/перевернулась).
+    Источник — сырьё `funding_snapshot`, поэтому история доступна за всё, что в БД.
+    """
+    min_ts = latest_ts - hours * 3600
+    timestamps = [
+        row[0]
+        for row in session.execute(
+            select(FundingSnapshot.ts)
+            .where(FundingSnapshot.ts >= min_ts, FundingSnapshot.ts <= latest_ts)
+            .distinct()
+            .order_by(FundingSnapshot.ts)
+        ).all()
+    ]
+    if not timestamps:
+        return []
+
+    rate_rows = session.execute(
+        select(
+            FundingSnapshot.ts,
+            FundingSnapshot.venue,
+            FundingSnapshot.funding_rate_1h,
+        ).where(
+            FundingSnapshot.ts >= min_ts,
+            FundingSnapshot.ts <= latest_ts,
+            FundingSnapshot.ticker == ticker,
+            FundingSnapshot.venue.in_((long_venue, short_venue)),
+        )
+    ).all()
+    rates: dict[tuple[int, str], float] = {(ts, venue): rate for ts, venue, rate in rate_rows}
+
+    series: list[float | None] = []
+    for ts in timestamps:
+        long_rate = rates.get((ts, long_venue))
+        short_rate = rates.get((ts, short_venue))
+        if long_rate is None or short_rate is None:
+            series.append(None)
+        else:
+            series.append((short_rate - long_rate) * HOURS_PER_YEAR * 100.0)
+    return series
+
+
+def get_candidate_decay(
+    candidate_id: str,
+    session: Session | None = None,
+    hours: int = SPARKLINE_HOURS,
+) -> dict | None:
+    """Decay-вердикт по конкретному `candidate_id` = `TICKER:LONG:SHORT`.
+
+    Отвечает на вопрос Hermes "связка, которую я держу, ещё жива?" — даже если она
+    выпала из текущего вердикта (это и есть самый громкий сигнал «закрой X»).
+    Историю реконструируем из сырья, так что вердикт есть и для исчезнувшей связки.
+
+    Возвращает None, если `candidate_id` не парсится. Если данных в БД нет — отдаёт
+    конверт с `present=False` и `staleness="unknown"`, а не падает.
+    """
+    parts = candidate_id.split(":")
+    if len(parts) != 3 or not all(parts):
+        return None
+    ticker, long_venue, short_venue = parts
+
+    own_session = False
+    if session is None:
+        session = SessionLocal()
+        own_session = True
+    try:
+        latest_ts = session.scalar(select(func.max(FundingSnapshot.ts)))
+        if latest_ts is None:
+            return {
+                "candidate_id": candidate_id,
+                "ticker": ticker,
+                "long_venue": long_venue,
+                "short_venue": short_venue,
+                "present": False,
+                "current_spread_apr_pct": None,
+                "snapshot_ts": None,
+                "spread_sparkline": "",
+                "window_age_hours": 0,
+                "peak_spread_apr_pct": None,
+                "hours_since_peak": None,
+                "decay_from_peak_pct": None,
+                "staleness": "unknown",
+            }
+
+        history = _spread_series_for_key(
+            session, ticker, long_venue, short_venue, int(latest_ts), hours=hours
+        )
+        decay = decay_from_history(history)
+        present = bool(history) and history[-1] is not None
+        current = history[-1] if present else None
+
+        return {
+            "candidate_id": candidate_id,
+            "ticker": ticker,
+            "long_venue": long_venue,
+            "short_venue": short_venue,
+            "present": present,
+            "current_spread_apr_pct": current,
+            "snapshot_ts": int(latest_ts),
+            "spread_sparkline": render_sparkline_blocks(history),
+            "window_age_hours": count_consecutive_hours_above_threshold(history),
+            **decay,
+        }
+    finally:
+        if own_session:
+            session.close()
 
 
 def get_latest_setups(
@@ -329,6 +520,7 @@ def get_latest_setups(
             row["delta_spread_apr_pct_1h"] = deltas.get(key)
             row["spread_sparkline"] = render_sparkline_blocks(history)
             row["window_age_hours"] = count_consecutive_hours_above_threshold(history)
+            row.update(decay_from_history(history))
             rows.append(row)
 
         now_ts = int(datetime.now(UTC).timestamp())
@@ -347,6 +539,8 @@ def get_latest_setups(
 
 # Re-export для удобства тестирования
 __all__ = [
+    "DECAY_COOLING_PCT",
+    "DECAY_STALE_PCT",
     "DEFAULT_CAPITAL_USD",
     "HOURS_PER_YEAR",
     "PREV_SNAPSHOT_MAX_LAG_SEC",
@@ -358,7 +552,9 @@ __all__ = [
     "compute_spread_deltas",
     "compute_spread_history",
     "count_consecutive_hours_above_threshold",
+    "decay_from_history",
     "find_prev_snapshot_ts",
+    "get_candidate_decay",
     "get_latest_setups",
     "make_candidate_id",
     "render_sparkline_blocks",
