@@ -12,8 +12,7 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..detectors import CrossDexSameTickerDetector
-from ..detectors.base import Setup
+from ..detectors import Setup, detect_setups, make_candidate_id
 from ..storage import SessionLocal
 from ..storage.models import FundingSnapshot
 
@@ -42,19 +41,6 @@ WINDOW_AGE_THRESHOLD_PCT = 30.0
 HOURS_PER_YEAR = 24 * 365
 
 
-def make_candidate_id(ticker: str, long_venue: str, short_venue: str) -> str:
-    """Стабильный идентификатор связки: `TICKER:LONG_VENUE:SHORT_VENUE`.
-
-    Детерминирован и стабилен между снапшотами — построен на том же натуральном
-    ключе `(ticker, long_venue, short_venue)`, на котором уже матчатся Δ Spread и
-    sparkline-история (см. `_spread_index`, `compute_spread_deltas`). Это даёт
-    Hermes/боту ссылаться на «ту самую связку» во времени и сопоставлять её с
-    реально открытой позицией. Если funding меняет направление и long/short
-    меняются местами — это уже другая торговая связка, и id честно меняется.
-    """
-    return f"{ticker}:{long_venue}:{short_venue}"
-
-
 def setup_to_row(s: Setup, capital_usd: float = DEFAULT_CAPITAL_USD) -> dict:
     """Преобразовать Setup в плоский dict для AG-Grid.
 
@@ -72,7 +58,7 @@ def setup_to_row(s: Setup, capital_usd: float = DEFAULT_CAPITAL_USD) -> dict:
     min_vol_m = (s.min_volume_24h_usd / 1e6) if s.min_volume_24h_usd is not None else None
 
     return {
-        "candidate_id": make_candidate_id(s.ticker, s.long_venue, s.short_venue),
+        "candidate_id": s.candidate_id,
         "type": s.type,
         "ticker": s.ticker,
         "long_venue": s.long_venue,
@@ -320,16 +306,15 @@ def get_latest_setups(
         ).all()
         venue_counts = dict(venue_count_rows)
 
-        # Запускаем все имеющиеся детекторы и аггрегируем setups
-        detector = CrossDexSameTickerDetector()
-        setups = detector.detect_for_snapshot(session, latest_ts)
+        # Единый набор детекторов — тот же, что персистит runner и отдаёт JSON-API.
+        setups = detect_setups(session, int(latest_ts))
 
         # Δ Spread (1h): сравниваем с предыдущим снапшотом (~ts-3600).
         # Если предыдущего нет (свежий продакт) — у всех строк delta = None.
         prev_ts = find_prev_snapshot_ts(session, int(latest_ts))
         deltas: dict[tuple[str, str, str], float] = {}
         if prev_ts is not None:
-            prev_setups = detector.detect_for_snapshot(session, prev_ts)
+            prev_setups = detect_setups(session, prev_ts)
             deltas = compute_spread_deltas(setups, prev_setups)
 
         # Sparkline истории спреда за 24h — один SQL и группировка в Python.

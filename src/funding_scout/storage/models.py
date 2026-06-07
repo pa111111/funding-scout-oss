@@ -9,7 +9,7 @@ Schema принципы:
 
 from __future__ import annotations
 
-from sqlalchemy import Float, Index, Integer, JSON, PrimaryKeyConstraint, String
+from sqlalchemy import JSON, Float, Index, Integer, PrimaryKeyConstraint, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -48,4 +48,53 @@ class FundingSnapshot(Base):
         return (
             f"FundingSnapshot(ts={self.ts}, venue={self.venue!r}, "
             f"ticker={self.ticker!r}, funding_rate_1h={self.funding_rate_1h:.6f})"
+        )
+
+
+class SetupSnapshot(Base):
+    """Вычисленная связка, персистнутая на каденции снапшота.
+
+    В отличие от `funding_snapshot` (сырьё), здесь лежит ВЫВОД детекторов — то, что
+    раньше считалось на лету в `get_latest_setups()` и нигде не сохранялось. Без этой
+    истории не работает decay/staleness (концепт Hermes §4.4): нельзя сказать «связка
+    X протухла», не имея её прошлых значений. Пишется тем же runner'ом, что и сырьё,
+    на тот же `ts` — один снапшот = одна согласованная пара (funding + setups).
+
+    Композитный PK (ts, candidate_id) → идемпотентность при ретраях, как у сырья.
+    """
+
+    __tablename__ = "setup_snapshot"
+
+    ts: Mapped[int] = mapped_column(Integer, nullable=False, doc="Unix ts UTC, == funding_snapshot.ts")
+    candidate_id: Mapped[str] = mapped_column(
+        String(160), nullable=False, doc="Стабильный id связки: TICKER:LONG:SHORT"
+    )
+
+    type: Mapped[str] = mapped_column(String(48), nullable=False)
+    ticker: Mapped[str] = mapped_column(String(64), nullable=False)
+    long_venue: Mapped[str] = mapped_column(String(32), nullable=False)
+    short_venue: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    spread_apr_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    base_ev_per_dollar_per_day: Mapped[float] = mapped_column(Float, nullable=False)
+    long_funding_apr_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    short_funding_apr_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    round_trip_cost_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    price_spread_pct: Mapped[float] = mapped_column(Float, nullable=False)
+
+    # nullable: inf (spread<=0) и отсутствие volume хранятся как NULL, не как inf/nan.
+    min_profitable_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+    min_volume_24h_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    __table_args__ = (
+        PrimaryKeyConstraint("ts", "candidate_id", name="pk_setup_snapshot"),
+        # decay-запросы: история одной связки во времени.
+        Index("idx_setup_snapshot_candidate_ts", "candidate_id", "ts"),
+        Index("idx_setup_snapshot_ts", "ts"),
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return (
+            f"SetupSnapshot(ts={self.ts}, candidate_id={self.candidate_id!r}, "
+            f"spread_apr_pct={self.spread_apr_pct:.2f})"
         )

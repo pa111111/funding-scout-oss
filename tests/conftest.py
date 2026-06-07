@@ -20,7 +20,7 @@ import pytest  # noqa: E402
 from sqlalchemy import delete  # noqa: E402
 
 from funding_scout.storage import Base, engine  # noqa: E402
-from funding_scout.storage.models import FundingSnapshot  # noqa: E402
+from funding_scout.storage.models import FundingSnapshot, SetupSnapshot  # noqa: E402
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -33,7 +33,8 @@ def _create_schema():
 
 @pytest.fixture(autouse=True)
 def _clean_table():
-    """Перед каждым тестом — пустая таблица. Тесты не зависят друг от друга."""
+    """Перед каждым тестом — пустые таблицы. Тесты не зависят друг от друга."""
     with engine.begin() as conn:
+        conn.execute(delete(SetupSnapshot))
         conn.execute(delete(FundingSnapshot))
     yield

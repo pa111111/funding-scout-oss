@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-from typing import cast
 
-import pytest
 from sqlalchemy import select
 
 from funding_scout import connectors as connectors_pkg
 from funding_scout.connectors.base import Connector, FundingTick
-from funding_scout.snapshot.runner import take_snapshot
+from funding_scout.snapshot.runner import _finite_or_none, take_snapshot
 from funding_scout.storage import SessionLocal
-from funding_scout.storage.models import FundingSnapshot
+from funding_scout.storage.models import FundingSnapshot, SetupSnapshot
 
 
 class _FakeOk(Connector):
@@ -140,3 +138,75 @@ def test_multi_venue_one_call(monkeypatch):
     with SessionLocal() as s:
         rows = s.execute(select(FundingSnapshot).order_by(FundingSnapshot.venue)).scalars().all()
         assert [(r.venue, r.ticker) for r in rows] == [("hl", "BTC"), ("lighter", "BTC")]
+
+
+# === setup_snapshot persist (concept §4.2) ===
+
+
+def _two_venue_btc():
+    """Две венью с одной монетой и противоположным фандингом → cross-dex setup."""
+    return [
+        _FakeOk("hl", [FundingTick(venue="hl", ticker="BTC", funding_rate_1h=0.0005, mark_price=60000)]),
+        _FakeOk(
+            "lighter",
+            [FundingTick(venue="lighter", ticker="BTC", funding_rate_1h=-0.0005, mark_price=60010)],
+        ),
+    ]
+
+
+def test_snapshot_persists_setups(monkeypatch):
+    """take_snapshot пишет вычисленные связки в setup_snapshot на тот же ts."""
+    import funding_scout.snapshot.runner as runner_mod
+
+    _patch_connectors(monkeypatch, _two_venue_btc())
+    fixed_ts = 1_700_000_000
+    monkeypatch.setattr(runner_mod.time, "time", lambda: fixed_ts)
+
+    asyncio.run(take_snapshot())
+
+    with SessionLocal() as s:
+        setups = s.execute(select(SetupSnapshot)).scalars().all()
+        assert len(setups) == 1
+        row = setups[0]
+        assert row.ts == fixed_ts  # тот же ts, что у сырья
+        assert row.ticker == "BTC"
+        assert row.candidate_id == f"BTC:{row.long_venue}:{row.short_venue}"
+        assert row.spread_apr_pct > 0
+
+
+def test_persist_setups_idempotent(monkeypatch):
+    """Повторный снапшот на тот же ts не плодит дубли связок (PK ts+candidate_id)."""
+    import funding_scout.snapshot.runner as runner_mod
+
+    _patch_connectors(monkeypatch, _two_venue_btc())
+    monkeypatch.setattr(runner_mod.time, "time", lambda: 1_700_000_000)
+
+    asyncio.run(take_snapshot())
+    asyncio.run(take_snapshot())  # дубликат
+
+    with SessionLocal() as s:
+        assert len(s.execute(select(SetupSnapshot)).scalars().all()) == 1
+
+
+def test_persist_setups_failure_does_not_lose_raw(monkeypatch):
+    """Если детектор/персист падает — сырьё всё равно сохранено, take_snapshot не падает."""
+    import funding_scout.snapshot.runner as runner_mod
+
+    _patch_connectors(monkeypatch, _two_venue_btc())
+    monkeypatch.setattr(
+        runner_mod, "persist_setups", lambda ts: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+
+    counts = asyncio.run(take_snapshot())  # не должно бросить
+    assert counts == {"hl": 1, "lighter": 1}
+
+    with SessionLocal() as s:
+        assert len(s.execute(select(FundingSnapshot)).scalars().all()) == 2  # сырьё на месте
+
+
+def test_finite_or_none_strips_inf_nan():
+    assert _finite_or_none(float("inf")) is None
+    assert _finite_or_none(float("-inf")) is None
+    assert _finite_or_none(float("nan")) is None
+    assert _finite_or_none(None) is None
+    assert _finite_or_none(12.5) == 12.5

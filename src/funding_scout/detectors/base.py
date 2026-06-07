@@ -11,6 +11,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
+def make_candidate_id(ticker: str, long_venue: str, short_venue: str) -> str:
+    """Стабильный идентификатор связки: `TICKER:LONG_VENUE:SHORT_VENUE`.
+
+    Детерминирован и стабилен между снапшотами — построен на том же натуральном
+    ключе `(ticker, long_venue, short_venue)`, на котором уже матчатся Δ Spread и
+    sparkline-история (см. `_spread_index`, `compute_spread_deltas` в web/data.py).
+    Это даёт Hermes/боту ссылаться на «ту самую связку» во времени и сопоставлять
+    её с реально открытой позицией. Если funding меняет направление и long/short
+    меняются местами — это уже другая торговая связка, и id честно меняется.
+    """
+    return f"{ticker}:{long_venue}:{short_venue}"
+
+
 @dataclass(frozen=True)
 class Setup:
     """Связка для отображения. Заморожена для безопасной передачи между слоями."""
@@ -43,6 +56,11 @@ class Setup:
 
     # === Метаданные ===
     snapshot_ts: int                  # unix timestamp снапшота, по которому посчитано
+
+    @property
+    def candidate_id(self) -> str:
+        """Стабильный id связки — единый ключ для UI, JSON-API и setup_snapshot."""
+        return make_candidate_id(self.ticker, self.long_venue, self.short_venue)
 
     # Risk-метрики (β, σ, ADL, sim-flash-crash) появятся в v0.2 когда накопится история.
     # Сейчас в Setup их нет — добавим без breaking changes (frozen dataclass с default'ами).
