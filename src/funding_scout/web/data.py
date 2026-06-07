@@ -42,6 +42,19 @@ WINDOW_AGE_THRESHOLD_PCT = 30.0
 HOURS_PER_YEAR = 24 * 365
 
 
+def make_candidate_id(ticker: str, long_venue: str, short_venue: str) -> str:
+    """Стабильный идентификатор связки: `TICKER:LONG_VENUE:SHORT_VENUE`.
+
+    Детерминирован и стабилен между снапшотами — построен на том же натуральном
+    ключе `(ticker, long_venue, short_venue)`, на котором уже матчатся Δ Spread и
+    sparkline-история (см. `_spread_index`, `compute_spread_deltas`). Это даёт
+    Hermes/боту ссылаться на «ту самую связку» во времени и сопоставлять её с
+    реально открытой позицией. Если funding меняет направление и long/short
+    меняются местами — это уже другая торговая связка, и id честно меняется.
+    """
+    return f"{ticker}:{long_venue}:{short_venue}"
+
+
 def setup_to_row(s: Setup, capital_usd: float = DEFAULT_CAPITAL_USD) -> dict:
     """Преобразовать Setup в плоский dict для AG-Grid.
 
@@ -59,6 +72,7 @@ def setup_to_row(s: Setup, capital_usd: float = DEFAULT_CAPITAL_USD) -> dict:
     min_vol_m = (s.min_volume_24h_usd / 1e6) if s.min_volume_24h_usd is not None else None
 
     return {
+        "candidate_id": make_candidate_id(s.ticker, s.long_venue, s.short_venue),
         "type": s.type,
         "ticker": s.ticker,
         "long_venue": s.long_venue,
@@ -361,6 +375,7 @@ __all__ = [
     "count_consecutive_hours_above_threshold",
     "find_prev_snapshot_ts",
     "get_latest_setups",
+    "make_candidate_id",
     "render_sparkline_blocks",
     "setup_to_row",
 ]

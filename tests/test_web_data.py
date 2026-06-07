@@ -21,6 +21,7 @@ from funding_scout.web.data import (
     count_consecutive_hours_above_threshold,
     find_prev_snapshot_ts,
     get_latest_setups,
+    make_candidate_id,
     render_sparkline_blocks,
     setup_to_row,
 )
@@ -97,6 +98,24 @@ def test_row_includes_all_display_fields():
         "snapshot_ts",
     }
     assert keys.issubset(row)
+
+
+def test_row_includes_candidate_id():
+    row = setup_to_row(_setup(ticker="SOL", long_venue="hyperliquid", short_venue="lighter"))
+    assert row["candidate_id"] == "SOL:hyperliquid:lighter"
+
+
+def test_candidate_id_stable_across_calls():
+    """Один и тот же ключ связки → один и тот же id (детерминизм для матчинга)."""
+    s = _setup()
+    assert setup_to_row(s)["candidate_id"] == setup_to_row(s)["candidate_id"]
+
+
+def test_candidate_id_changes_when_direction_flips():
+    """Смена long/short местами = другая торговая связка → другой id."""
+    a = make_candidate_id("BTC", "hyperliquid", "lighter")
+    b = make_candidate_id("BTC", "lighter", "hyperliquid")
+    assert a != b
 
 
 def test_setup_to_row_default_delta_is_none():
@@ -322,7 +341,7 @@ def test_delta_spread_none_when_prev_too_old():
     _ins(11000, "lighter", "BTC", -0.0001)
     _ins(11000, "hyperliquid", "BTC", 0.0002)
 
-    assert 11000 - 1000 > PREV_SNAPSHOT_MAX_LAG_SEC  # sanity
+    assert PREV_SNAPSHOT_MAX_LAG_SEC < 11000 - 1000  # sanity
     _, rows = get_latest_setups()
     assert rows[0]["delta_spread_apr_pct_1h"] is None
 
