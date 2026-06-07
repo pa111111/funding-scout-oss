@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Read-only `GET /api/setups` JSON endpoint — the live EV verdict as JSON for programmatic consumers, served on the same host/port as the Dash UI. Reuses `get_latest_setups()`, so UI and JSON share one computation. Envelope carries `computed_at`, `capital_usd`, `meta`, `setups[]`. See [`docs/api.md`](docs/api.md).
+- Stable `candidate_id` (`TICKER:LONG:SHORT`) on every setup — deterministic key to reference the same setup over time and reconcile it with a downstream position.
+- `setup_snapshot` table — persists the computed detector verdict each cadence (previously computed on the fly and never stored), enabling setup history for a future decay/staleness signal. Written by the snapshot runner on the same `ts` as raw funding; composite PK `(ts, candidate_id)` for idempotency; persist isolated from the raw write.
+- `detectors.detect_setups()` — single source of truth for "which setups exist"; the UI, the JSON endpoint and the persisted history all call it.
+
 ## [0.1.0] — 2026-05-12
 
 Initial public release.

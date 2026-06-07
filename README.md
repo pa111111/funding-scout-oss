@@ -133,9 +133,10 @@ src/funding_scout/
 │                    #   more on the way: correlated-pair, equity-weekend, carry)
 ├── ev/              # EV arithmetic + cost model (fees, slippage, friction tax)
 ├── storage/         # SQLAlchemy 2 models + engine, dialect-aware upsert
-├── snapshot/        # snapshot loop runner with per-connector failure isolation
+│                    #   (funding_snapshot = raw, setup_snapshot = computed history)
+├── snapshot/        # snapshot loop: persists raw + computed setups on the same ts
 ├── notify/          # Telegram delivery
-├── web/             # Dash + dash-ag-grid UI
+├── web/             # Dash + dash-ag-grid UI + read-only GET /api/setups (docs/api.md)
 ├── reporting.py     # daily report payload assembly
 ├── config.py        # env-driven settings (pydantic-settings)
 └── cli.py           # CLI entry point (click)
@@ -164,6 +165,7 @@ CI runs both lint and the mocked suite on every push: [`.github/workflows/test.y
 - [`docs/positions.md`](docs/positions.md) — operational rules for opening, holding, closing (isolated margin, equal contracts, hybrid limit/market, market stops, 2–3x leverage).
 - [`docs/exchanges.md`](docs/exchanges.md) — venue universe, integrated and candidates.
 - [`docs/stack.md`](docs/stack.md) — tech choices and rationale.
+- [`docs/api.md`](docs/api.md) — read-only `GET /api/setups` JSON contract, the stable `candidate_id`, and the `setup_snapshot` history table.
 
 > Some docs are still bilingual (the framework was developed in Russian, English translation is in progress). The README and code are English-first.
 
