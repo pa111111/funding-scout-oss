@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     # HTTP client
     http_timeout_seconds: float = 15.0
 
+    # Survival-кривая окна (см. survival/). Предиктивный слой поверх decay/staleness:
+    # сколько ещё проживёт окно по распределению длительностей исторических окон (KM).
+    survival_history_days: int = 45            # окно истории для KM (≈ вся БД с 5 мая)
+    survival_window_threshold_pct: float = 30.0  # == WINDOW_AGE_THRESHOLD_PCT (web/data.py)
+    survival_min_windows: int = 5              # < N завершённых окон у пары → pooled fallback
+
 
 settings = Settings()
 

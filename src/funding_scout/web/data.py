@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from ..detectors import Setup, detect_setups, make_candidate_id
 from ..storage import SessionLocal
 from ..storage.models import FundingSnapshot
+from ..survival import compute_survival_for_setups
 
 DEFAULT_CAPITAL_USD = 5000.0
 
@@ -79,6 +80,17 @@ def setup_to_row(s: Setup, capital_usd: float = DEFAULT_CAPITAL_USD) -> dict:
         "hours_since_peak": None,
         "decay_from_peak_pct": None,
         "staleness": "unknown",
+        # survival (предиктивный слой, KM по 45d) — заполняется в get_latest_setups.
+        # Плоско в строку, как decay: /api/setups отдаёт их без спец-обработки.
+        "survival_current_age_h": 0,
+        "survival_median_lifetime_h": None,
+        "survival_median_remaining_h": None,
+        "survival_p_survive_min_hold": None,
+        "survival_curve": [],
+        "survival_sample_size": 0,
+        "survival_pooled": False,
+        "survival_confidence": "none",
+        "survival_sparkline": "",
         "base_ev_usd_per_day": base_ev_usd_per_day,
         "min_profitable_hours": min_hours,
         "long_funding_apr_pct": s.long_funding_apr_pct,
@@ -458,6 +470,25 @@ def get_candidate_decay(
             session.close()
 
 
+def _survival_row_fields(est) -> dict:
+    """Плоские survival-поля для row dict (предиктивный слой рядом с decay).
+
+    Зеркалит стиль decay_from_history (плоско в строку). curve рендерим в sparkline
+    тут же; сырой curve тоже отдаём (агент строит свою свёртку, напр. ev_day_at_50).
+    """
+    return {
+        "survival_current_age_h": est.current_age_h,
+        "survival_median_lifetime_h": est.median_total_lifetime_h,
+        "survival_median_remaining_h": est.median_remaining_h,
+        "survival_p_survive_min_hold": est.p_survive_min_hold,
+        "survival_curve": [[k, p] for k, p in est.curve],
+        "survival_sample_size": est.sample_size,
+        "survival_pooled": est.pooled,
+        "survival_confidence": est.confidence,
+        "survival_sparkline": render_sparkline_blocks([p for _k, p in est.curve]),
+    }
+
+
 def get_latest_setups(
     session: Session | None = None,
     capital_usd: float = DEFAULT_CAPITAL_USD,
@@ -512,6 +543,10 @@ def get_latest_setups(
         # Для каждой связки получаем list[float | None], рендерим в unicode-строку.
         histories = compute_spread_history(session, setups, int(latest_ts))
 
+        # Survival (предиктивный слой): KM по 45d истории окон. Кэш по latest_ts —
+        # считается один раз на снапшот, шарится с /api/setups. См. survival/service.py.
+        survival = compute_survival_for_setups(session, setups, int(latest_ts))
+
         rows = []
         for s in setups:
             row = setup_to_row(s, capital_usd=capital_usd)
@@ -521,6 +556,9 @@ def get_latest_setups(
             row["spread_sparkline"] = render_sparkline_blocks(history)
             row["window_age_hours"] = count_consecutive_hours_above_threshold(history)
             row.update(decay_from_history(history))
+            est = survival.get(key)
+            if est is not None:
+                row.update(_survival_row_fields(est))
             rows.append(row)
 
         now_ts = int(datetime.now(UTC).timestamp())

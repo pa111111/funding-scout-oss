@@ -82,3 +82,25 @@ def test_api_setups_is_json_serializable_no_inf_nan():
     resp = _client().get("/api/setups")
     # get_json() бросит, если тело не строгий JSON
     assert resp.get_json() is not None
+
+
+def test_api_setups_carry_survival_block():
+    """Каждый сетап несёт survival-поля (предиктивный слой поверх decay)."""
+    ts = 1_700_000_000
+    _ins(ts, "hyperliquid", "BTC", 0.0005)
+    _ins(ts, "lighter", "BTC", -0.0005)
+
+    s = _client().get("/api/setups").get_json()["setups"][0]
+    for field in (
+        "survival_current_age_h",
+        "survival_median_lifetime_h",
+        "survival_median_remaining_h",
+        "survival_p_survive_min_hold",
+        "survival_curve",
+        "survival_sample_size",
+        "survival_pooled",
+        "survival_confidence",
+        "survival_sparkline",
+    ):
+        assert field in s
+    assert isinstance(s["survival_curve"], list)

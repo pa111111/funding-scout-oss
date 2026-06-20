@@ -21,6 +21,7 @@ from sqlalchemy import delete  # noqa: E402
 
 from funding_scout.storage import Base, engine  # noqa: E402
 from funding_scout.storage.models import FundingSnapshot, SetupSnapshot  # noqa: E402
+from funding_scout.survival import reset_survival_cache  # noqa: E402
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -37,4 +38,5 @@ def _clean_table():
     with engine.begin() as conn:
         conn.execute(delete(SetupSnapshot))
         conn.execute(delete(FundingSnapshot))
+    reset_survival_cache()  # survival-кэш по latest_ts переживёт чистку БД — сбрасываем
     yield

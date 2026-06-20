@@ -139,6 +139,70 @@ COLUMN_DEFS: list[dict] = [
         "width": 90,
     },
     {
+        "field": "survival_median_remaining_h",
+        "headerName": "Est. left h",
+        "headerTooltip": (
+            "Сколько ещё часов окно проживёт — медианная ОСТАТОЧНАЯ жизнь при текущем "
+            "возрасте (Age h), по Kaplan–Meier на 45d истории окон ≥ 30% APR. "
+            "Предиктивный слой поверх decay: decay говорит «уже падает», survival — "
+            "«статистически скоро закроется» ещё до падения. "
+            "— = окна сейчас нет / живёт дольше наблюдённого горизонта. "
+            "Серым = низкая уверенность (мало своих окон → оценка по глобальному пулу)."
+        ),
+        "type": "numericColumn",
+        "filter": "agNumberColumnFilter",
+        "valueFormatter": {
+            "function": "params.value == null ? '—' : params.value.toFixed(0) + 'h'"
+        },
+        "cellStyle": {
+            "function": (
+                "params.value == null ? {color:'#aaa'} : "
+                "((params.data && (params.data.survival_confidence === 'low' || "
+                "params.data.survival_confidence === 'none')) ? {color:'#aaa'} : "
+                "{color:'#0a7d2c', fontWeight:'600'})"
+            )
+        },
+        "width": 100,
+    },
+    {
+        "field": "survival_median_lifetime_h",
+        "headerName": "Median life h",
+        "headerTooltip": (
+            "Типичная ПОЛНАЯ длительность окна ≥ 30% APR по этой паре (медиана KM). "
+            "Контекст для Age h: окно молодое или уже на исходе относительно типичного. "
+            "Серым = оценка по глобальному пулу (мало своих окон). — = пул не закрылся."
+        ),
+        "type": "numericColumn",
+        "filter": "agNumberColumnFilter",
+        "valueFormatter": {
+            "function": "params.value == null ? '—' : params.value.toFixed(0) + 'h'"
+        },
+        "cellStyle": {
+            "function": "(params.data && params.data.survival_pooled) ? {color:'#aaa'} : null"
+        },
+        "width": 120,
+    },
+    {
+        "field": "survival_sparkline",
+        "headerName": "Survival ▸",
+        "headerTooltip": (
+            "Форма затухания шанса: P(окно доживёт ещё k часов) для k = 1..24 "
+            "(1 символ = 1 час вперёд от текущего момента). "
+            "Высокий блок = высокий шанс дожития, падение = окно скорее закроется. "
+            "Пусто = нет активного окна или недостаточно данных."
+        ),
+        "sortable": False,
+        "filter": False,
+        "valueFormatter": {"function": "params.value || ''"},
+        "cellStyle": {
+            "fontFamily": "Consolas, 'Courier New', monospace",
+            "fontSize": "14px",
+            "letterSpacing": "0px",
+            "color": "#444",
+        },
+        "width": 200,
+    },
+    {
         "field": "delta_spread_apr_pct_1h",
         "headerName": "Δ 1h",
         "headerTooltip": (
