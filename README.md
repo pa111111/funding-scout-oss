@@ -49,7 +49,9 @@ EV figures are computed for a standard $5k notional per leg. Pre-market and low-
 
 This is by design (transparent risk disclosure, no paternalistic filtering), but in the web UI you can apply a `Min vol 24h $M ≥ 1` filter in the column header and the picture collapses to the ~50 setups you can realistically take. The screenshot above shows that filtered view. The daily Telegram digest applies the same filter automatically and tags the message with `filter: 24h vol ≥ $1M` so you always know whether you're looking at the full board or the actionable subset.
 
-The web UI adds four columns the CLI doesn't show: **Trend 24h** (unicode-block sparkline of spread history), **Age h** (consecutive hours the spread has stayed ≥ 30% APR — distinguishes fresh windows from steady carry), **Δ 1h** (spread change vs the previous snapshot — tells you whether the opportunity is opening or closing right now), and color-coded **LONG perp on / SHORT perp on** columns that read as a literal trade instruction.
+The web UI adds columns the CLI doesn't show. A **durability cluster** answers the operative question on a setup — *is this window opening, closing, or how much longer will it last*: **Trend 24h** (unicode-block sparkline of spread history), **Age h** (consecutive hours the spread has stayed ≥ 30% APR — fresh window vs steady carry), **Δ 1h** (spread change vs the previous snapshot — opening or closing right now), plus a Kaplan–Meier **survival** layer: **Est. left h** (predicted hours the *current* window will still last, from the distribution of this pair's historical window lifetimes) and **Median life h** (its typical full lifetime). Then color-coded **LONG perp on / SHORT perp on** columns that read as a literal trade instruction.
+
+The same verdict is exposed machine-readably at **`GET /api/setups`** for a downstream operator/agent, carrying both a *descriptive* **decay/staleness** signal (has the spread fallen from its own peak — reactive) and the *predictive* survival numbers (how much longer, before it moves). See [`docs/api.md`](docs/api.md).
 
 ```bash
 funding-scout web --host 127.0.0.1 --port 8050
@@ -132,6 +134,8 @@ src/funding_scout/
 ├── detectors/       # generate setups from snapshots (cross-DEX same-ticker now,
 │                    #   more on the way: correlated-pair, equity-weekend, carry)
 ├── ev/              # EV arithmetic + cost model (fees, slippage, friction tax)
+├── survival/        # Kaplan–Meier window-survival: predicted remaining lifetime
+│                    #   of a window from its history (pure, no numpy)
 ├── storage/         # SQLAlchemy 2 models + engine, dialect-aware upsert
 │                    #   (funding_snapshot = raw, setup_snapshot = computed history)
 ├── snapshot/        # snapshot loop: persists raw + computed setups on the same ts
@@ -141,7 +145,7 @@ src/funding_scout/
 ├── config.py        # env-driven settings (pydantic-settings)
 └── cli.py           # CLI entry point (click)
 
-tests/               # 119 mocked + 5 E2E (gated FUNDING_SCOUT_E2E=1)
+tests/               # 232 mocked + 5 E2E (gated FUNDING_SCOUT_E2E=1)
 docs/                # framework, taxonomy, risk model, deployment notes
 deploy/systemd/      # reference units (host/port via EnvironmentFile)
 ```
@@ -149,7 +153,7 @@ deploy/systemd/      # reference units (host/port via EnvironmentFile)
 ## Tests
 
 ```bash
-pytest                              # 119 fast mocked tests
+pytest                              # 232 fast mocked tests
 FUNDING_SCOUT_E2E=1 pytest tests/e2e # 5 real-API integration tests
 ruff check . && ruff format --check .
 ```
@@ -165,7 +169,7 @@ CI runs both lint and the mocked suite on every push: [`.github/workflows/test.y
 - [`docs/positions.md`](docs/positions.md) — operational rules for opening, holding, closing (isolated margin, equal contracts, hybrid limit/market, market stops, 2–3x leverage).
 - [`docs/exchanges.md`](docs/exchanges.md) — venue universe, integrated and candidates.
 - [`docs/stack.md`](docs/stack.md) — tech choices and rationale.
-- [`docs/api.md`](docs/api.md) — read-only `GET /api/setups` JSON contract, the stable `candidate_id`, and the `setup_snapshot` history table.
+- [`docs/api.md`](docs/api.md) — read-only `GET /api/setups` JSON contract: the stable `candidate_id`, the descriptive **decay/staleness** signal, the predictive Kaplan–Meier **survival** signal, and the `setup_snapshot` history table.
 
 > Some docs are still bilingual (the framework was developed in Russian, English translation is in progress). The README and code are English-first.
 
