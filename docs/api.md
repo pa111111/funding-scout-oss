@@ -75,6 +75,14 @@ the payload is always strict JSON.
 | `peak_spread_apr_pct` | float \| null | Max spread APR over the 24h window. `null` if no history. |
 | `decay_from_peak_pct` | float \| null | How far spread has fallen from its peak, 0–100%. `null` if peak ≤ 0 / no history. |
 | `hours_since_peak` | int \| null | Hours since the most recent peak. `null` if no history. |
+| `survival_median_remaining_h` | float \| null | Predicted hours the **current** window will still last — median residual life given its age (Kaplan–Meier). `null` if no active window or it outlives the observed horizon. See [Survival signal](#survival-signal). |
+| `survival_median_lifetime_h` | float \| null | Typical **full** lifetime of a window on this pair (KM median). Context for `window_age_hours`. `null` under heavy censoring. |
+| `survival_p_survive_min_hold` | float \| null | `P(window lasts ≥ min_profitable_hours more)` — chance it survives long enough to clear round-trip. `null` if no active window or spread ≤ 0. |
+| `survival_curve` | array | `[[k, p], …]` for k = 1..24: `P(window survives ≥ k more hours)`. Raw input for a consumer's own survival-weighted EV. `[]` if no active window. |
+| `survival_sample_size` | int | Completed historical windows the estimate rests on. |
+| `survival_pooled` | bool | `true` when the pair had too few own windows (<5) and a global pooled curve was used instead. |
+| `survival_confidence` | string | `high` (≥12 windows) / `medium` / `low` (pooled or <5) / `none` (no data). |
+| `survival_sparkline` | string | Unicode block sparkline of `survival_curve` (display aid). |
 | `base_ev_usd_per_day` | float | Average $/day at `capital_usd`, no risk penalty (transparent risk disclosure). |
 | `min_profitable_hours` | float \| null | Hours to clear round-trip cost. `null` if spread ≤ 0 (was `inf`). |
 | `long_funding_apr_pct` / `short_funding_apr_pct` | float | Per-leg funding, annualised %. |
@@ -135,6 +143,57 @@ The verdict is pure arithmetic over the same 24h spread series that drives the
 sparkline and `window_age_hours` — no second engine, no extra data. The window is
 reconstructed from raw `funding_snapshot`, so the per-candidate endpoint can speak
 to a setup that has already vanished from the live verdict.
+
+## Survival signal
+
+Decay is **descriptive and reactive**: it tells you a window is fading *after* its
+spread starts falling from its own peak. Survival is the **predictive** complement:
+given the window's age, how many more hours is it likely to last — *before* the
+spread moves at all.
+
+It answers the case decay cannot: a window sitting right at its peak reads
+`staleness: fresh` (hold!), but if windows on this pair historically die at a
+median age of 5h and this one is already 6h old, it is statistically overdue.
+`survival_median_remaining_h` flags it; decay stays silent until the drop begins.
+
+### Method
+
+For each pair, the full trailing history (default 45 days) of the spread is split
+into **windows** — maximal runs of consecutive hours with spread ≥ the tradeable
+threshold (30% APR, the same one `window_age_hours` uses). The lifetimes of those
+windows feed a **Kaplan–Meier** estimator of the survival function `S(t) =
+P(window lives ≥ t hours)`:
+
+- the **currently-open** window is right-censored (its true lifetime is only a
+  lower bound), handled correctly by KM;
+- windows already open at the start of the history are left-truncated and dropped
+  (we never saw their start);
+- a gap in the data ends a window (same conservative rule as `window_age_hours`).
+
+From `S(t)` and the current age `a`:
+
+- **`survival_median_remaining_h`** = smallest `k` with
+  `P(T ≥ a+k | T ≥ a) ≤ 0.5` — the headline "how much longer".
+- **`survival_median_lifetime_h`** = KM median of the full lifetime distribution.
+- **`survival_p_survive_min_hold`** = `P(T ≥ a + min_profitable_hours | T ≥ a)` —
+  survival tied directly to profitability.
+- **`survival_curve`** = the conditional survival for k = 1..24, so a consumer can
+  build its own survival-weighted EV (e.g. `ev_day` discounted by survival).
+
+### Confidence and pooling (honest about thin history)
+
+A pair with fewer than 5 completed windows of its own falls back to a **global
+pooled** curve (KM over all pairs' windows), with `survival_pooled: true`. This is
+*degraded-but-flagged*, not hidden: `survival_confidence`
+(`high`/`medium`/`low`/`none`) and `survival_sample_size` always tell the consumer
+how much to trust the number. A `low`/`none` value should be discounted.
+
+Survival is exposed **inline on every setup** in `GET /api/setups` (the fields
+above). The per-candidate endpoint below currently carries **decay only** — survival
+for a setup that has dropped out of the verdict is a planned follow-up.
+
+Config knobs (env, `FUNDING_SCOUT_` prefix): `survival_history_days` (45),
+`survival_window_threshold_pct` (30.0), `survival_min_windows` (5).
 
 ## `GET /api/setups/<candidate_id>`
 
